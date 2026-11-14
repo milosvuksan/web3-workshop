@@ -137,7 +137,7 @@ fn bounded_orphan_storage_prioritizes_ancestry() {
         sync.defer(b);
     }
     assert_eq!(sync.waiting.len(), MAX_WAITING);
-    assert_eq!(sync.wanted.len(), MAX_WAITING);
+    assert!(sync.wanted.is_empty());
     let ancestor = Block {
         height: 1,
         ..genesis()
@@ -178,15 +178,19 @@ fn duplicate_orphan_does_not_evict_other_pending_blocks() {
 }
 
 #[test]
-fn needed_ancestor_displaces_speculative_requests_at_capacity() {
+fn wanted_capacity_evicts_oldest_request_without_refreshing_duplicates() {
     use baneworkshop::{
         network::sync::{MAX_WAITING, Sync},
         protocol::{Block, params::genesis},
     };
     let mut sync = Sync::default();
-    for nonce in 0..MAX_WAITING as u64 {
-        sync.want(Block { nonce, ..genesis() }.hash());
+    let hashes: Vec<_> = (0..MAX_WAITING as u64)
+        .map(|nonce| Block { nonce, ..genesis() }.hash())
+        .collect();
+    for hash in &hashes {
+        sync.want(*hash);
     }
+    sync.want(hashes[0]);
     let parent = Bytes([0x42; 32]);
     sync.defer(Block {
         height: 2,
@@ -196,7 +200,53 @@ fn needed_ancestor_displaces_speculative_requests_at_capacity() {
     sync.want_parent(parent);
     assert_eq!(sync.wanted.len(), MAX_WAITING);
     assert!(sync.wanted.contains(&parent));
-    // Speculative tips cannot evict the required ancestor.
+    assert!(!sync.wanted.contains(&hashes[0]));
+    assert!(sync.wanted.contains(&hashes[1]));
     sync.want(Bytes([0x43; 32]));
     assert!(sync.wanted.contains(&parent));
+    assert!(!sync.wanted.contains(&hashes[1]));
+    sync.forget(&hashes[2]);
+    sync.want(hashes[2]);
+    sync.want(Bytes([0x44; 32]));
+    assert!(sync.wanted.contains(&hashes[2]));
+    assert!(!sync.wanted.contains(&hashes[3]));
+}
+
+#[test]
+fn retries_rotate_in_batches_and_keep_progress_when_requests_are_removed() {
+    use baneworkshop::network::sync::Sync;
+    let mut sync = Sync::default();
+    let hashes: Vec<_> = (1..=10).map(|n| Bytes([n; 32])).collect();
+    for hash in &hashes {
+        sync.want(*hash);
+    }
+    assert_eq!(sync.retry_requests(), hashes[..4]);
+    for hash in &hashes[..4] {
+        sync.forget(hash);
+    }
+    assert_eq!(sync.retry_requests(), hashes[4..8]);
+    assert_eq!(
+        sync.retry_requests(),
+        vec![hashes[8], hashes[9], hashes[4], hashes[5]]
+    );
+    for hash in &hashes {
+        sync.forget(hash);
+    }
+    assert!(sync.retry_requests().is_empty());
+    sync.want(hashes[0]);
+    assert_eq!(sync.retry_requests(), vec![hashes[0]]);
+}
+
+#[test]
+fn pending_blocks_are_known_and_do_not_remain_wanted() {
+    use baneworkshop::{network::sync::Sync, protocol::params::genesis};
+    let mut sync = Sync::default();
+    let block = genesis();
+    let hash = block.hash();
+    sync.want(hash);
+    sync.defer(block);
+    sync.want(hash);
+    sync.want_parent(hash);
+    assert!(sync.wanted.is_empty());
+    assert!(sync.retry_requests().is_empty());
 }

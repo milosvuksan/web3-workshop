@@ -1,10 +1,12 @@
 # Pixel Chain — Rust prototype
 
-Implementation of `IMPLEMENTATION_PLAN.md` on branch `milos`. The current [SPEC.md](SPEC.md) defines the protocol, including the original prototype decisions. [PROTOTYPE_DEFAULTS.md](PROTOTYPE_DEFAULTS.md) retains the rationale and local operational details. The [spec alignment review](SPEC_ALIGNMENT.md) confirms that the published rules match the implementation.
+The [group specification](SPEC.md) defines the protocol. [Original requirements](original_requirements.md) describe the workshop scope, and [prototype defaults](PROTOTYPE_DEFAULTS.md) document the implementation choices and local operation.
 
-Progress against all original milestones and stretch goals is tracked in [MILESTONE_STATUS.md](MILESTONE_STATUS.md). The default interface is a live Rust terminal dashboard with a color canvas, controls, test runner, debug submenus, and logs. The scriptable line CLI and PPM export remain available. There is no browser UI or HTTP endpoint.
+The default interface is a live Rust terminal dashboard with a color canvas, controls, test runner, debug submenus, and logs. The scriptable line CLI and PPM export remain available. There is no browser UI. Optional [cross compatibility](COMPATIBILITY.md) adds Grupa 1 HTTP peer endpoints.
 
-The node implements Ed25519 identities, fixed 23-bit PoW, ownership/painting/transfers, parcel replay counters, atomic validation, fork resolution, a mempool, full-mesh TCP gossip, lag/loss, missing-ancestor retries, late join, and recovery from surviving peers after a crash. Canvas output is a 64×32 PPM image. There is no durable chain storage.
+The node implements Ed25519 identities, fixed 23-bit PoW, ownership/painting/transfers, parcel replay counters, atomic validation, fork resolution, a mempool, full-mesh TCP gossip, lag/loss, missing-ancestor retries, late join, and recovery from surviving peers after a crash. Canvas output is a 32×32 PPM image. There is no durable chain storage.
+
+[CATCHUP.md](CATCHUP.md) describes backward ancestor fetching, forward validation, two-second retries, future blocks, bounded queues, and verification of late join and restart recovery.
 
 ## Start everything with one command
 
@@ -12,7 +14,7 @@ The node implements Ed25519 identities, fixed 23-bit PoW, ownership/painting/tra
 cargo run --release --locked
 ```
 
-This opens the Ratatui/Crossterm dashboard and starts the node with its persistent identity. Mining starts stopped; networking starts online with the configured peers (none by default). Once built, run `target/release/baneworkshop` directly. An interactive terminal is required; 100×25 or larger shows the outlined parcel grid beside its inspector. Each parcel has its own border and unobstructed color fill; the viewport follows arrow-key selection across the 64×32 canvas. Larger terminals show more parcels. RGB rendering uses terminal true color; `NO_COLOR` is respected.
+This opens the Ratatui/Crossterm dashboard and starts the node with its persistent identity. Mining starts stopped; networking starts online with the configured peers (none by default). Once built, run `target/release/baneworkshop` directly. An interactive terminal is required; the full 32×32 parcel grid stays centered without scrolling and scales to fit the viewport with square proportions. Two raster rows share each terminal row; smaller terminals explicitly show an averaged overview. Cyan guides and an underline mark the selection; yellow underlines mark cells containing your parcels. RGB rendering uses terminal true color; `NO_COLOR` is respected.
 
 Configure a node, or start completely offline:
 
@@ -24,14 +26,14 @@ cargo run --release --locked -- tui --offline --data-dir data/solo
 
 | Page | Available actions |
 | --- | --- |
-| **1 Canvas** | Live RGB grid, ownership overlay (`v`), arrow-key parcel selection, owner/color/counter inspection, your-parcel outlines, a color picker (`p`), and transfer (`t`) prompts |
+| **1 Canvas** | Live RGB grid, ownership overlay (`v`), arrow-key parcel selection, owner/color/counter inspection, your-parcel underlines, a color picker (`p`), and transfer (`t`) prompts |
 | **2 Controls** | Toggle network or mining independently, export canvas/state, quit; select with arrows and Enter |
-| **3 Tests** | Run all validation checks or individual test suites, format/Clippy, independent vectors, release build, TCP faults, shutdown/control/PTY regressions, workshop demo, and three benchmarks; Enter runs, `x` cancels |
+| **3 Tests** | Run all validation checks or individual test suites, format/Clippy, independent vectors, release build, TCP faults, shutdown/control/PTY regressions, workshop demo, and a hash-rate check; Enter runs, `x` cancels |
 | **4 Debug** | Left/right submenus for status, peer session identities, the latest 100 canonical blocks and total fork entries, mempool transactions, missing/deferred blocks, startup configuration and file paths |
 | **5 Logs** | Recent node events, command results and rejected commands; full history is appended to `node.log` |
 | **6 Help** | Keyboard reference and line commands |
 | **7 Owned** | All parcels owned by this identity, coordinates, color swatches, acquisition time and method; Enter edits color, `g` locates on the map |
-| **8 Settings** | Choose mining workers and the TCP port (default 7001); apply live and save per node |
+| **8 Settings** | Choose mining workers, local difficulty and the TCP port (default 7001); apply live and save per node |
 | **9 Network** | Add IP addresses and aliases, edit/remove saved peers, and view blockchain connection status and active sessions |
 
 Use **Tab / Shift-Tab** or **1–9** to change pages. Global keys: **`o`** online/offline, **`m`** start/stop mining, **`e`** export, **`:`** command prompt, **`?`** help, **`q` / Ctrl-C** quit. Enter submits commands; Esc cancels input. PgUp/PgDn scroll text, Home shows the beginning, End follows the latest output. Shortcuts are treated as text while entering a command.
@@ -46,11 +48,17 @@ cargo run --release --locked -- tui --threads all
 cargo run --release --locked -- tui --threads 4
 ```
 
-The line CLI and `:` prompt also accept `threads all` or `threads 4`; these commands save the preference. `status` exposes `mining_thread_setting`, `mining_threads`, `active_mining_threads`, and `available_threads`. This setting controls node mining workers; the terminal/network runtime runs independently, and the existing timing benchmarks retain their reproducible single-worker workloads.
+The line CLI and `:` prompt also accept `threads all` or `threads 4`; these commands save the preference. `status` exposes `mining_thread_setting`, `mining_threads`, `active_mining_threads`, and `available_threads`. This setting controls node mining workers; the terminal/network runtime runs independently.
+
+In **Settings**, select **Local zero bits** to set this node's mining difficulty, then press **Enter** to save. You can also use `difficulty 24` in the command prompt. The default and minimum are 23 leading zero bits, matching the network requirement; values up to 256 make this miner search longer without changing which blocks it accepts from peers. Each extra bit doubles the expected work. The setting is saved per node and changes restart active mining workers. `status` reports it as `mining_difficulty`.
 
 In **Settings**, select **TCP port**, adjust with **←/→**, or press **`n`** to enter a port (1–65535), then apply with **Enter**. The `port 7002` command also applies and saves it. Online changes reopen the listener and reconnect peers; a busy port leaves the current network intact. Offline nodes stay offline. `--port 7002` overrides the saved port for one run and binds `0.0.0.0`; `--listen 127.0.0.1:7002` overrides both bind address and port. These startup options are mutually exclusive. A fresh node listens on **0.0.0.0:7001**.
 
 Press **`9`** for **Network**. Press **`a`** to add a peer, enter its IP address (optionally `:PORT`), press **Enter**, enter an alias, and press **Enter** again to save. A bare IP uses port **7001**; IPv6 endpoints with a port use `[2001:db8::1]:7001`. Aliases may contain spaces and are local to this node. Use **↑/↓** to select a saved peer, **Enter/e** to edit, or **d/Delete** to remove. In the editor, **Tab** changes fields, **Ctrl-U** clears a field, and **Esc** cancels.
+
+To transfer an owned parcel, select it on the canvas or Owned page and press **`t`**. Choose a node from the saved Network list with **↑/↓** and press **Enter** to queue the transfer. The node must be connected so its public key is known; press **`m`** to enter a public key manually. A mined block confirms the transfer.
+
+The peer editor also has an optional **Cross compatibility** dropdown. Tab to it, use Space to open and arrows to select **Grupa 1 - Luka**, then Enter to select and save. A bare IP for this profile uses port **8080**. Multiple saved peers can use the profile. Its HTTP transport and independent chain support Grupa 1's validation and signed transactions; see [COMPATIBILITY.md](COMPATIBILITY.md) for commands, two-way setup, and chain differences.
 
 Saved peers and aliases live in `<data-dir>/settings.json` and reconnect automatically at startup. Online edits update outgoing connections immediately while preserving the listener and unrelated sessions. Offline edits are saved without opening sockets. **Connected** means a valid handshake for this blockchain; **Handshaking** means TCP is open but the handshake is pending; **Retrying** means the node is trying to connect; **Offline** follows this node's network setting. Connections retry every two seconds. Additional `--peers` targets are combined with saved peers for that run.
 
@@ -63,7 +71,7 @@ peer edit 192.168.1.21:7002 192.168.1.22:7002 Moved node
 peer remove 192.168.1.20
 ```
 
-Your parcels have **thick yellow rectangular outlines**. Other parcels have thin gray outlines. The **`›` cursor stays inside the selected parcel**, with its color fill visible. Press **`h`** to toggle ownership outlines. Arrow keys move the selection and pan the viewport; **`7`**, choose a parcel, then **`g`** locates it on the map.
+Your parcels have **yellow underlines** and the selection has **cyan guides and an underline**. The continuous RGB image stays fixed as arrow keys move the selection; markers preserve its foreground and background colors. At compact sizes, an underline can represent two parcel rows or an averaged group. The inspector shows the exact selected coordinates and color, with a compact strip below the map on narrow terminals. Press **`h`** to toggle ownership markers; **`7`**, choose a parcel, then **`g`** locates it on the map.
 
 Press **`7`** or **`b`** for **Owned**. Each entry includes its parcel ID, zero-based **(x, y)** coordinates, current confirmed color, and the latest acquisition's **UTC confirmation time**, through **mining** or **transfer**. Transfer details include the sender and transaction ID; both methods include the confirming block and height. The history follows the canonical chain, rebuilds during peer recovery/reorganizations, and preserves acquisition dates through painting and self-transfers. A transfer away and back records a new acquisition. Pending transactions do not change confirmed ownership or color. The grid and Owned list show the latest local paint as a clearly labeled **pending preview** until it is confirmed.
 
@@ -73,13 +81,13 @@ The line command `owned` returns all currently owned parcels with coordinates an
 
 **Offline** closes the listener, every peer transport, pending sends, and reconnect loops. It retains the current in-memory chain, pending transactions, identity, and mining setting. No peer messages are sent or received by this node while offline. Local mining and signed paint/transfer submissions still work; reconnecting resumes synchronization and pending transaction gossip. A reconnect bind error leaves the node offline and displays the error. **Stop mining** cancels and joins all its workers and rejects stale results, while leaving the network setting unchanged.
 
-Diagnostic jobs run separately, with live output and exit status; the dashboard keeps processing node events. Full stdout/stderr is saved in `<data-dir>/diagnostics/*.log`; the UI retains the latest 2,000 output lines. Jobs stop at the first failing check. Cancel and quit terminate the job's process group on Unix, including test nodes and miners. On other platforms cancellation stops the direct child; Python PTY tests and Unix-specific workshop scenarios require Unix. Tests may create isolated **loopback nodes even when the dashboard node is offline**. The all-checks option includes real full-difficulty mining; timing benchmarks are separate menu choices.
+Diagnostic jobs run separately, with live output and exit status; the dashboard keeps processing node events. Full stdout/stderr is saved in `<data-dir>/diagnostics/*.log`; the UI retains the latest 2,000 output lines. Jobs stop at the first failing check. Cancel and quit terminate the job's process group on Unix, including test nodes and miners. On other platforms cancellation stops the direct child; Python PTY tests and Unix-specific workshop scenarios require Unix. Tests may create isolated **loopback nodes even when the dashboard node is offline**. The all-checks option includes real full-difficulty mining; the hash-rate check is a separate menu choice.
 
 The diagnostic menu requires the repository, Cargo with rustfmt/Clippy, Python 3, and OpenSSL on PATH. If you move the executable, set `PIXEL_WORKSPACE=/path/to/baneworkshop` to point at the source checkout. Identity persists across restarts; the chain remains in memory and recovers from surviving online peers.
 
 ## Build and check
 
-Rust 2024 edition; resolved dependencies are pinned in `Cargo.lock`.
+Install a Rust toolchain supporting edition 2024. Resolved dependencies are pinned in `Cargo.lock`. Python 3 and OpenSSL are needed for the independent validation scripts; PTY and process-group checks require Unix.
 
 ```bash
 cargo build --release --locked
@@ -90,6 +98,7 @@ python3 scripts/verify-vectors.py          # Python 3 + OpenSSL; independent enc
 python3 scripts/network-fault-test.py      # after release build; real TCP fault injection
 python3 scripts/test-network-settings.py   # debug build; UDP discovery and live/saved port settings
 python3 scripts/test-peers.py              # saved peer aliases, live edits, and restart reconnection
+python3 scripts/test-compatibility.py --binary target/release/baneworkshop # independent Grupa 1 HTTP peers
 python3 scripts/test-shutdown.py --binary target/release/baneworkshop
 python3 scripts/test-controls.py --binary target/release/baneworkshop
 python3 scripts/test-tui.py --binary target/release/baneworkshop
@@ -154,12 +163,16 @@ Generate/reload a standalone key with `target/release/baneworkshop key --file da
 
 ## Hashing measurement
 
+The specification asks each participant to measure hash speed. This small command hashes the actual canonical header using the miner's cached SHA-256 prefix:
+
 ```bash
 target/release/baneworkshop benchmark --hashes 4000000
-# Mine and fully validate 100 sequential new blocks with a reproducible workload:
-target/release/baneworkshop benchmark-mining --samples 100 --json
-# Measure 100 actual node block intervals, including worker/coordinator overhead:
-python3 scripts/benchmark-node.py --blocks 100 --warmup 5 --output /tmp/node-mining.json
 ```
 
-This hashes the actual canonical header using the same cached SHA-256 prefix as the miner. Expected group block time is approximately `8388608 / combined_hashes_per_second` seconds. Difficulty stays at the agreed 23 bits regardless of measured speed. The new-block benchmark uses the production miner and validator at 23 bits with one worker; its JSON retains every sample and reports mean, median, p95, and hash rate. The live-node benchmark starts an isolated node with a fresh temporary identity, normal diagnostics, and default-on lag; no peers are connected. See [AUDIT_REPORT.md](AUDIT_REPORT.md) for the audit fixes and current measured mining times, or [VALIDATION.md](VALIDATION.md) for the original implementation run.
+Expected group block time is approximately `8388608 / combined_hashes_per_second` seconds. Measurements do not change the network's 23-bit difficulty.
+
+## Repository contents
+
+Source, locked dependencies, specifications, public test fixtures, validation scripts, and the examples are sufficient to build and recreate a node. Each new data directory generates its own identity and settings. Configure your addresses and aliases through the Network page or the commands above.
+
+Runtime data, private seeds, saved node settings, logs, benchmark results, editor configuration, and build output are excluded from Git. Public seeds in test fixtures are intentional; use generated identities for running nodes.

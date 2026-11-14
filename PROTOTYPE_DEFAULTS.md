@@ -4,7 +4,7 @@ These choices originally filled the protocol blanks under the implementation req
 
 The published specification still labels sections 2–11 provisional and retains group verification checkboxes. Those labels are preserved as written; they do not require different prototype behavior. Other implementations must verify the shared fixtures before interoperability is established. A future consensus change requires a new chain identity and regenerated vectors.
 
-The accepted Ed25519, SHA-256, lowercase hex, 64×32 canvas, TCP full mesh, 23-bit difficulty, multiplication-based parcel retry, one reward per block, fork tie-break, and default-on lag are unchanged.
+The accepted Ed25519, SHA-256, lowercase hex, 32×32 canvas, TCP full mesh, 23-bit difficulty, multiplication-based parcel retry, one reward per block, fork tie-break, and default-on lag are unchanged.
 
 ## Canonical transaction bytes (consensus)
 
@@ -14,7 +14,7 @@ Integers are unsigned, fixed width, big-endian. Signing uses ordinary Ed25519, n
 | --- | --- | --- | --- |
 | 1 | Domain | 12 | ASCII `PIXEL-TX-v1` followed by one zero byte |
 | 2 | Action tag | 1 | Paint = 1, transfer = 2 |
-| 3 | Parcel | 2 | ID 0–2047 |
+| 3 | Parcel | 2 | ID 0–1023 |
 | 4 | Counter | 8 | Next counter for this parcel |
 | 5 | Sender | 32 | Ed25519 public key |
 | 6 | Payload | 3 or 32 | Paint: red, green, blue bytes; transfer: recipient public key |
@@ -45,7 +45,7 @@ For each transaction, validate in this order:
 
 Only then apply the action and increment the counter. The counter follows the parcel across every transfer, including transfer back to an earlier owner. This rejects repeated inclusion, replay after transfer, and two uses of one counter. A transaction at `u64::MAX` is rejected; that parcel is frozen. Reorganization restores the complete winning branch's state, including counters.
 
-Reward selection tries **2048 candidates total**, including the initial candidate. Candidate 0 is a valid parcel. On occupation use `(candidate * (timestamp mod 2048)) mod 2048`, which is mathematically equivalent to the agreed product without overflow. Preserve cycles: exhausting retries or a full canvas gives no reward but leaves the block valid. Do not substitute the additive walk.
+Reward selection tries **1024 candidates total**, including the initial candidate. Candidate 0 is a valid parcel. On occupation use `(candidate * (timestamp mod 1024)) mod 1024`, which is mathematically equivalent to the agreed product without overflow. Preserve cycles: exhausting retries or a full canvas gives no reward but leaves the block valid. Do not substitute the additive walk.
 
 ## Canonical block bytes and genesis (consensus)
 
@@ -93,7 +93,7 @@ TCP, UTF-8 JSON objects, one object per newline. JSON member order and insignifi
 
 Addresses are explicit `--peers` socket addresses, repeated or comma-separated. Every configured node should list every other node. Duplicate configured addresses are collapsed. Simultaneous inbound and outbound sessions are both retained (normally two TCP sessions per peer pair); block/transaction deduplication prevents echo loops. `status.connections` counts sessions, not unique identities. No peer auto-discovery or sparse-topology guarantees.
 
-New valid blocks, including side branches, and newly admitted transactions forward once to all ready sessions, including the origin. Known blocks/transactions do not forward again. Tip anti-entropy recovers missed block announcements. Missing ancestry is fetched backward, then validated forward. Outstanding missing hashes are retried every 2 seconds, sent to every ready peer so a disappearing source does not stall recovery. Up to four outstanding hashes are retried per tick with a rotating cursor; when request storage fills, ancestors needed by retained blocks displace speculative tip requests; receiving an orphan also immediately requests its parent from that source. Up to four mempool transactions are reannounced per tick with a rotating cursor, recovering lost transaction announcements and out-of-order dependent transactions.
+New valid blocks, including side branches, and newly admitted transactions forward once to all ready sessions, including the origin. Known blocks/transactions do not forward again. Tip anti-entropy recovers missed block announcements. Missing ancestry is fetched backward, then validated forward. Orphans must have valid 23-bit PoW before entering pending storage. Outstanding missing hashes are retried every 2 seconds, sent to every ready peer so a disappearing source does not stall recovery. Up to four outstanding hashes are retried per tick in rotating order; when request storage fills, the oldest request is evicted. Receiving an orphan also immediately requests its parent from that source, unless that parent is already known in the chain or pending storage. Up to four mempool transactions are reannounced per tick with a rotating cursor, recovering lost transaction announcements and out-of-order dependent transactions. See [CATCHUP.md](CATCHUP.md).
 
 ## Local operational defaults (not consensus)
 
@@ -105,7 +105,7 @@ New valid blocks, including side branches, and newly admitted transactions forwa
 | Identity | `identity.seed` within data directory, automatically created from OS randomness; `--key PATH` explicitly loads an existing seed |
 | Seed file | 64 lowercase hex digits, optional single trailing LF; create-new and sync; Unix mode 0600; reject broader Unix permissions; never print private bytes |
 | Chain storage | Memory only; restarts download from surviving peers; JSON/PPM exports are diagnostics and are never trusted as recovery input |
-| Diagnostics | Atomically replaced `status.json`, deterministic `state.json`, and 64×32 binary P6 `canvas.ppm`, refreshed every 2 seconds and after local commands |
+| Diagnostics | Atomically replaced `status.json`, deterministic `state.json`, and 32×32 binary P6 `canvas.ppm`, refreshed every 2 seconds and after local commands |
 | Diagnostic state hash | SHA-256 of row-major parcels: owner-present `u8`, owner bytes (zero when absent), RGB 3 bytes, next counter `u64` big-endian; not a consensus field |
 | Terminal interface | Default command opens the Rust Ratatui/Crossterm dashboard; `node` retains the scriptable stdin interface |
 | Networking control | Online by default; `--offline` starts without sockets; `network off` closes and joins listener/session/reconnect tasks; `network on` resumes peer synchronization independently of mining |
@@ -117,7 +117,7 @@ New valid blocks, including side branches, and newly admitted transactions forwa
 | Mining settings | Exact count (1–1024) or all available logical CPUs; saved per data directory in `settings.json`; `--threads COUNT|all` overrides the preference for that run; changing the count preserves mining/network on/off states |
 | Cancellation | Check at most every 16,384 hashes; new tip or changed mempool replaces the candidate; queued successful results survive periodic maintenance; stale results fail generation/parent checks and accepted results undergo full validation |
 | Mempool | 4096 entries; arrival order, state-aware admission/selection, 256 selected per block; local commands reserve pending counters |
-| Unknown/future blocks | At most 1024 pending blocks and 1024 wanted hashes, in memory; on overflow prefer lower-height ancestors, and rediscover evicted descendants from missing-parent/tip exchange |
+| Unknown/future blocks | At most 1024 pending blocks and 1024 wanted hashes, in memory; pending overflow discards the highest-height block, wanted overflow evicts the oldest request; evicted descendants are rediscovered from missing-parent/tip exchange |
 | Queues | 1024 coordinator events; 128 outbound messages per session; a full/closed outbound queue cancels that session and closes its transport immediately; reconnect/catch-up repairs it; coordinator shutdown owns and cancels its network tasks |
 | Connection limits | At most 128 incoming sessions; configured outgoing connections separately bounded by configured peer count |
 | Timeouts/reconnect | 5-second connect/write timeouts; reconnect after 2 seconds; 2-second tip/request retry interval; 30-second read-idle timeout |

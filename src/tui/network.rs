@@ -1,5 +1,5 @@
 use super::*;
-use crate::settings::{SavedPeer, peer_address};
+use crate::settings::{CompatibilityProfile, SavedPeer, peer_address_for};
 
 #[derive(Default)]
 pub(super) struct NetworkPage {
@@ -11,6 +11,8 @@ struct PeerEditor {
     address: String,
     alias: String,
     field: usize,
+    compatibility: CompatibilityProfile,
+    dropdown: bool,
     error: String,
 }
 impl NetworkPage {
@@ -29,24 +31,59 @@ impl NetworkPage {
         self.selected = self.selected.min(peers.len().saturating_sub(1));
         if let Some(editor) = &mut self.editor {
             match key.code {
+                KeyCode::Esc if editor.dropdown => editor.dropdown = false,
                 KeyCode::Esc => self.editor = None,
-                KeyCode::Tab | KeyCode::BackTab | KeyCode::Up | KeyCode::Down => editor.field ^= 1,
+                KeyCode::Tab | KeyCode::BackTab => {
+                    editor.field =
+                        (editor.field + if key.code == KeyCode::BackTab { 2 } else { 1 }) % 3;
+                    editor.dropdown = false;
+                }
+                KeyCode::Left | KeyCode::Right | KeyCode::Up | KeyCode::Down
+                    if editor.field == 2 =>
+                {
+                    let profiles = CompatibilityProfile::ALL;
+                    let index = profiles
+                        .iter()
+                        .position(|p| *p == editor.compatibility)
+                        .unwrap_or(0);
+                    editor.compatibility = profiles[(index
+                        + if matches!(key.code, KeyCode::Left | KeyCode::Up) {
+                            profiles.len() - 1
+                        } else {
+                            1
+                        })
+                        % profiles.len()];
+                }
+                KeyCode::Char(' ') if editor.field == 2 => editor.dropdown = !editor.dropdown,
+                KeyCode::Enter if editor.dropdown => editor.dropdown = false,
+                KeyCode::Up | KeyCode::Down => editor.field = (editor.field + 1) % 3,
                 KeyCode::Enter => {
-                    match peer_address(editor.address.trim())
+                    match peer_address_for(editor.address.trim(), editor.compatibility)
                         .and_then(|address| SavedPeer::new(address, &editor.alias))
                     {
                         Err(error) => editor.error = error.to_string(),
-                        Ok(peer) if editor.field == 0 => {
-                            editor.address = peer.address.to_string();
+                        Ok(_) if editor.field == 0 => {
                             editor.field = 1;
                             editor.error.clear();
                         }
                         Ok(peer) => {
+                            let profile = if editor.compatibility == CompatibilityProfile::Native
+                                && editor.original.is_none()
+                            {
+                                String::new()
+                            } else {
+                                format!("--compat {} ", editor.compatibility.id())
+                            };
                             return Some(match editor.original {
                                 Some(old) => {
-                                    format!("peer edit {old} {} {}", peer.address, peer.alias)
+                                    format!(
+                                        "peer edit {old} {} {profile}{}",
+                                        peer.address, peer.alias
+                                    )
                                 }
-                                None => format!("peer add {} {}", peer.address, peer.alias),
+                                None => {
+                                    format!("peer add {} {profile}{}", peer.address, peer.alias)
+                                }
                             });
                         }
                     }
@@ -54,14 +91,14 @@ impl NetworkPage {
                 KeyCode::Backspace => {
                     if editor.field == 0 {
                         editor.address.pop();
-                    } else {
+                    } else if editor.field == 1 {
                         editor.alias.pop();
                     }
                 }
                 KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     if editor.field == 0 {
                         editor.address.clear();
-                    } else {
+                    } else if editor.field == 1 {
                         editor.alias.clear();
                     }
                 }
@@ -69,7 +106,8 @@ impl NetworkPage {
                     if !key
                         .modifiers
                         .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                        && !c.is_control() =>
+                        && !c.is_control()
+                        && editor.field < 2 =>
                 {
                     let (text, limit) = if editor.field == 0 {
                         (&mut editor.address, 80)
@@ -93,6 +131,8 @@ impl NetworkPage {
                     address: String::new(),
                     alias: String::new(),
                     field: 0,
+                    compatibility: CompatibilityProfile::Native,
+                    dropdown: false,
                     error: String::new(),
                 })
             }
@@ -103,6 +143,8 @@ impl NetworkPage {
                         address: peer.address.to_string(),
                         alias: peer.alias.clone(),
                         field: 1,
+                        compatibility: peer.compatibility,
+                        dropdown: false,
                         error: String::new(),
                     });
                 }
@@ -131,11 +173,11 @@ impl NetworkPage {
             Constraint::Length(4),
             Constraint::Min(3),
             Constraint::Length(5),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(area);
         let online = status["online"].as_bool().unwrap_or(false);
-        frame.render_widget(Paragraph::new(format!("{} • Listening: {} • Discovery: {}\nConnected means the peer accepted this blockchain's handshake.", if online { "ONLINE" } else { "OFFLINE" }, status["listen"].as_str().unwrap_or(""), if status["discovery"] == true { "on" } else { "off" })).block(panel("Network")), regions[0]);
+        frame.render_widget(Paragraph::new(format!("{} • Listening: {} • Discovery: {}\nConnected means a native handshake or successful profile HTTP synchronization.", if online { "ONLINE" } else { "OFFLINE" }, status["listen"].as_str().unwrap_or(""), if status["discovery"] == true { "on" } else { "off" })).block(panel("Network")), regions[0]);
         let peers = status["network_peers"]
             .as_array()
             .map(Vec::as_slice)
@@ -160,9 +202,15 @@ impl NetworkPage {
                             ),
                         ]),
                         Line::from(format!(
-                            "  {} • {} ready sessions",
+                            "  {} • {}{}",
                             peer["address"].as_str().unwrap_or(""),
-                            peer["sessions"]
+                            peer["compatibility_label"]
+                                .as_str()
+                                .unwrap_or("None (native)"),
+                            peer["error"]
+                                .as_str()
+                                .map(|e| format!(" • {e}"))
+                                .unwrap_or_default()
                         )),
                     ])
                 })
@@ -210,21 +258,14 @@ impl NetworkPage {
             ))),
             regions[2],
         );
-        frame.render_widget(Paragraph::new("a Add • Enter/e Edit • d/Delete Remove • o Online/offline\nSaved automatically; available again at startup.").block(panel("Peer controls")), regions[3]);
+        let foreign = &status["compatibility"];
+        frame.render_widget(Paragraph::new(format!("a Add • Enter/e Edit • d/Delete Remove • o Online/offline\nGrupa 1 - Luka: height {} • {} pending • mining {} (see help)", foreign["height"], foreign["mempool"], if status["compatibility_mining"] == true { "ON" } else { "off" })).block(panel("Peer controls")), regions[3]);
     }
     pub fn draw_editor(&self, frame: &mut Frame) {
         let Some(editor) = &self.editor else {
             return;
         };
-        let screen = frame.area();
-        let width = screen.width.min(76);
-        let height = screen.height.min(12);
-        let area = Rect::new(
-            screen.x + (screen.width - width) / 2,
-            screen.y + (screen.height - height) / 2,
-            width,
-            height,
-        );
+        let area = centered(frame.area(), 76, 17);
         frame.render_widget(Clear, area);
         let block = panel(if editor.original.is_some() {
             "Edit peer"
@@ -236,7 +277,8 @@ impl NetworkPage {
         let rows = Layout::vertical([
             Constraint::Length(3),
             Constraint::Length(3),
-            Constraint::Length(1),
+            Constraint::Length(if editor.dropdown { 4 } else { 3 }),
+            Constraint::Length(2),
             Constraint::Min(1),
         ])
         .split(inner);
@@ -262,15 +304,48 @@ impl NetworkPage {
                 rows[index],
             );
         }
+        let profile_text = if editor.dropdown {
+            CompatibilityProfile::ALL
+                .iter()
+                .map(|p| {
+                    format!(
+                        "{} {}",
+                        if *p == editor.compatibility {
+                            "›"
+                        } else {
+                            " "
+                        },
+                        p.label()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            format!("{}  ▾", editor.compatibility.label())
+        };
         frame.render_widget(
-            Paragraph::new("Tab: field • Ctrl-U: clear • Enter: save • Esc: cancel"),
+            Paragraph::new(profile_text).block(
+                panel("Cross compatibility • optional").border_style(Style::default().fg(
+                    if editor.field == 2 {
+                        ACCENT
+                    } else {
+                        Color::Gray
+                    },
+                )),
+            ),
             rows[2],
+        );
+        frame.render_widget(
+            Paragraph::new(
+                "Tab: field • ←/→: profile • Space: dropdown\nEnter: save • Ctrl-U: clear • Esc: cancel",
+            ),
+            rows[3],
         );
         frame.render_widget(
             Paragraph::new(editor.error.as_str())
                 .style(Style::default().fg(Color::Red))
                 .wrap(Wrap { trim: false }),
-            rows[3],
+            rows[4],
         );
     }
 }
@@ -310,13 +385,50 @@ mod tests {
         assert!(page.editor.is_none());
     }
     #[test]
+    fn optional_dropdown_selects_profile_and_its_default_port_and_preserves_edits() {
+        let mut page = NetworkPage::default();
+        page.input(key(KeyCode::Char('a')), &[]);
+        type_text(&mut page, "192.0.2.7");
+        page.input(key(KeyCode::Enter), &[]);
+        type_text(&mut page, "Luka laptop");
+        page.input(key(KeyCode::Tab), &[]);
+        page.input(key(KeyCode::Char(' ')), &[]);
+        assert!(page.editor.as_ref().unwrap().dropdown);
+        page.input(key(KeyCode::Down), &[]);
+        page.input(key(KeyCode::Enter), &[]);
+        assert_eq!(
+            page.input(key(KeyCode::Enter), &[]).unwrap(),
+            "peer add 192.0.2.7:8080 --compat grupa1-luka Luka laptop"
+        );
+        page.command_result(&Ok(true));
+        let peers = vec![
+            crate::settings::configured_peer("192.0.2.7", &["--compat", "grupa1-luka", "Luka"])
+                .unwrap(),
+        ];
+        page.input(key(KeyCode::Enter), &peers);
+        assert_eq!(
+            page.editor.as_ref().unwrap().compatibility,
+            CompatibilityProfile::Grupa1Luka
+        );
+        assert_eq!(
+            page.input(key(KeyCode::Enter), &peers).unwrap(),
+            "peer edit 192.0.2.7:8080 192.0.2.7:8080 --compat grupa1-luka Luka"
+        );
+        page.input(key(KeyCode::Tab), &peers);
+        page.input(key(KeyCode::Left), &peers);
+        assert_eq!(
+            page.input(key(KeyCode::Enter), &peers).unwrap(),
+            "peer edit 192.0.2.7:8080 192.0.2.7:8080 --compat native Luka"
+        );
+    }
+    #[test]
     fn edit_remove_and_cancel_keep_the_target_endpoint() {
         let peers = vec![SavedPeer::new("[::1]:7002".parse().unwrap(), "Local").unwrap()];
         let mut page = NetworkPage::default();
         page.input(key(KeyCode::Enter), &peers);
         assert_eq!(
             page.input(key(KeyCode::Enter), &peers).unwrap(),
-            "peer edit [::1]:7002 [::1]:7002 Local"
+            "peer edit [::1]:7002 [::1]:7002 --compat native Local"
         );
         page.input(key(KeyCode::Esc), &peers);
         assert_eq!(

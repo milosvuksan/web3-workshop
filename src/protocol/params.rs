@@ -1,5 +1,5 @@
 use super::{Block, Bytes};
-pub const WIDTH: usize = 64;
+pub const WIDTH: usize = 32;
 pub const HEIGHT: usize = 32;
 pub const PARCELS: usize = WIDTH * HEIGHT;
 pub const DIFFICULTY: u32 = 23;

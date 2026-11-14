@@ -78,7 +78,7 @@ def main():
             with socket.create_connection(('127.0.0.1', ports[2]), timeout=1):
                 pass
             saved = json.loads((base / '0' / 'settings.json').read_text())
-            assert saved == {'mining_threads': '3', 'port': ports[2], 'peers': []}
+            assert saved == {'mining_threads': '3', 'mining_difficulty': 23, 'port': ports[2], 'peers': []}
             stop(0)
             start(0)
             wait(lambda: status(0).get('port') == ports[2] and status(0).get('connections', 0) >= 1 and status(0).get('identity') == identity, 'restart loads saved port and identity')

@@ -15,10 +15,10 @@ Dva pravila važe za ceo dokument:
 | Heš | SHA-256 |
 | Zapis bajtova kao tekst | hex, mala slova, tačna dužina, bez `0x` |
 | Brojevi u bajtovima | neoznačeni, fiksne širine, big-endian |
-| Platno | 64×32 (2048 parcela), (0,0) gore levo, red po red |
+| Platno | 32×32 (1024 parcele), (0,0) gore levo, red po red |
 | Težina | 23 bita, fiksna |
 | Parcela po bloku | 1 |
-| Zauzeta parcela | množenje: `(kandidat · (time mod 2048)) mod 2048`, najviše 2048 kandidata ukupno |
+| Zauzeta parcela | množenje: `(kandidat · (time mod 1024)) mod 1024`, najviše 1024 kandidata ukupno |
 | Fork | najviše rada; pri izjednačenju manji heš vrha |
 | Zaštita od ponavljanja | brojač po parceli, počinje od 0 |
 | Mreža | TCP, svaki čvor sa svakim, jedan JSON objekat po redu |
@@ -42,7 +42,7 @@ Dve vrste: **bojenje** (oznaka 1) i **prenos** (oznaka 2). Obe potpisuje trenutn
 | --- | --- | --- | --- |
 | 1 | Domen | 12 | ASCII `PIXEL-TX-v1` + jedan nulti bajt |
 | 2 | Oznaka akcije | 1 | bojenje = 1, prenos = 2 |
-| 3 | Parcela | 2 | `u16`, 0–2047 |
+| 3 | Parcela | 2 | `u16`, 0–1023 |
 | 4 | Brojač | 8 | `u64`, sledeći brojač te parcele |
 | 5 | Pošiljalac | 32 | Ed25519 javni ključ |
 | 6 | Sadržaj | 3 ili 32 | bojenje: R, G, B; prenos: javni ključ primaoca |
@@ -116,13 +116,13 @@ Prethodni heš su nule, visina 0, rudar 32 nulta bajta, vreme 0, nonce 0, prazna
 
 **Težina:** 23 vodeća nulta bita, fiksno. Bitovi se broje od prvog bajta heša, od najvišeg bita.
 
-**Platno:** 64×32, parcele 0–2047, (0,0) je gornji levi ugao, red po red: `x = p mod 64`, `y = p / 64`. Boje su RGB, bez providnosti.
+**Platno:** 32×32, parcele 0–1023, (0,0) je gornji levi ugao, red po red: `x = p mod 32`, `y = p / 32`. Boje su RGB, bez providnosti.
 
-**Prvi kandidat:** `p₀ = (256 · hash[30] + hash[31]) mod 2048`, gde je `hash[0]` prvi bajt heša bloka. Parcela 0 je ispravan kandidat.
+**Prvi kandidat:** `p₀ = (256 · hash[30] + hash[31]) mod 1024`, gde je `hash[0]` prvi bajt heša bloka. Parcela 0 je ispravan kandidat.
 
-**Ako je kandidat zauzet:** `pᵢ₊₁ = (pᵢ · (time mod 2048)) mod 2048`. To je matematički isto kao dogovoreni proizvod, samo bez prekoračenja. Pokušava se **najviše 2048 kandidata ukupno**, računajući i prvi. Ako se iscrpe pokušaji ili je platno puno, nema nagrade, a blok ostaje ispravan.
+**Ako je kandidat zauzet:** `pᵢ₊₁ = (pᵢ · (time mod 1024)) mod 1024`. To je matematički isto kao dogovoreni proizvod, samo bez prekoračenja. Pokušava se **najviše 1024 kandidata ukupno**, računajući i prvi. Ako se iscrpe pokušaji ili je platno puno, nema nagrade, a blok ostaje ispravan.
 
-Napomena: pošto je 2048 = 2¹¹, množenje može da upadne u kratak ciklus (npr. sa parnim vremenom posle najviše 11 koraka ostaje na parceli 0). To je **namerno zadržano**; ne zamenjuje se sabiranjem.
+Napomena: pošto je 1024 = 2¹⁰, množenje može da upadne u kratak ciklus (npr. sa parnim vremenom posle najviše 10 koraka ostaje na parceli 0). To je **namerno zadržano**; ne zamenjuje se sabiranjem.
 
 **Brzine (za proveru težine):**
 
@@ -197,7 +197,8 @@ Za svaki blok osim genesis-a, ovim redom:
 - Novi ispravni blokovi (i sa sporednih grana) i novoprihvaćene transakcije šalju se **jednom** svim spremnim sesijama, uključujući i onu od koje su stigli. Već poznati se ne šalju ponovo.
 - Periodična razmena `tip` poruka otkriva propuštene blokove.
 - Nedostajući preci se traže unazad, pa se proveravaju unapred.
-- Nedostajući heševi se ponovo traže na svake 2 sekunde od svih spremnih čvorova, do 4 heša po krugu, rotirajući redom. Kad se memorija za zahteve napuni, preci potrebni zadržanim blokovima imaju prednost.
+- Nedostajući heševi se ponovo traže na svake 2 sekunde od svih spremnih čvorova, do 4 heša po krugu, rotirajući redom. Najviše 1024 tražena heša; kad se memorija za zahteve napuni, izbacuje se najstariji zahtev. Poznati blokovi (u lancu ili na čekanju) se ne traže ponovo.
+- Blok sa nepoznatim roditeljem mora imati 23 nulta bita pre čuvanja na čekanju. Čuva se najviše 1024 bloka na čekanju; pri popunjavanju izbacuje se blok sa najvećom visinom, da preci imaju prednost.
 - Kad stigne blok bez poznatog roditelja, odmah se traži roditelj od istog izvora.
 - Do 4 transakcije iz mempool-a se ponovo najavljuju po krugu, rotirajući redom.
 
@@ -224,7 +225,7 @@ Ovo je prototip u Rust-u; drugi čvorovi ne moraju da ga prate, ali je korisno z
 | Folder sa podacima | `data/node`; poseban folder za svaki pokrenut proces |
 | Identitet | `identity.seed` u folderu sa podacima, pravi se automatski; `--key PATH` učitava postojeći |
 | Seed fajl | 64 hex znaka mala slova, najviše jedan `\n` na kraju; privatni bajtovi se nikad ne ispisuju |
-| Dijagnostika | `status.json`, `state.json` i `canvas.ppm` (64×32, P6), osvežavaju se na 2 sekunde |
+| Dijagnostika | `status.json`, `state.json` i `canvas.ppm` (32×32, P6), osvežavaju se na 2 sekunde |
 | Heš stanja (dijagnostika) | SHA-256 parcela red po red: vlasnik postoji `u8`, bajtovi vlasnika (nule ako ga nema), RGB 3 bajta, sledeći brojač `u64`; nije polje konsenzusa |
 | Rudarenje | isključeno dok se ne pokrene `--mine` ili `mining on`; jedna radna nit; fiksnih 23 bita |
 | Mempool | 4096 transakcija; najviše 256 po bloku |

@@ -28,15 +28,6 @@ pub enum Command {
         #[arg(long, default_value_t = 2_000_000, value_parser = clap::value_parser!(u64).range(1..))]
         hashes: u64,
     },
-    /// Mine and fully validate sequential new blocks at the fixed 23-bit target.
-    BenchmarkMining {
-        /// Number of new blocks; 30 or more recommended for timing percentiles.
-        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..))]
-        samples: u32,
-        /// Emit the complete measurements as JSON.
-        #[arg(long)]
-        json: bool,
-    },
 }
 pub fn transaction(line: &str, counter: u64) -> Result<Transaction> {
     let args: Vec<_> = line.split_whitespace().collect();
@@ -75,4 +66,4 @@ pub fn key(file: PathBuf) -> Result<()> {
     );
     Ok(())
 }
-pub const HELP: &str = "status | identity | owned | paint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | threads COUNT|all | port PORT | peer add IP[:PORT] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [ALIAS] | peer remove IP[:PORT] | network on|off | export [PATH.ppm] | quit";
+pub const HELP: &str = "status | identity | owned | paint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | threads COUNT|all | difficulty BITS | port PORT | peer add IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer remove IP[:PORT] | grupa1 status | grupa1 mining on|off | grupa1 paint PARCEL COLOR | grupa1 transfer PARCEL PUBLIC_KEY | network on|off | export [PATH.ppm] | quit";

@@ -120,7 +120,7 @@ def ownership_case(binary):
             wait(lambda: status().get('height') == 3, 'fixture chain synchronization')
             press(b'7')
             wait(lambda: 'Acquisition details' in screen_text(transcript) and 'transfer' in screen_text(transcript) and 'mining' in screen_text(transcript), 'owned list with both receipt methods')
-            assert re.search(r'181\s+\(\s*53,\s*2\)', screen_text(transcript)), 'missing x,y coordinates'
+            assert re.search(r'181\s+\(\s*21,\s*5\)', screen_text(transcript)), 'missing x,y coordinates'
             assert '2023-11-14 22:13:22 UTC' in screen_text(transcript), 'transfer date is not its confirmation time'
             press(b'\rre\x1b[B\t')
             wait(lambda: '> red' in screen_text(transcript) and '#ff0000' in screen_text(transcript), 'color name autocomplete and preview')
@@ -130,9 +130,9 @@ def ownership_case(binary):
             wait(lambda: status().get('mempool') == 2, 'hex color submitted with pending counter')
             wait(lambda: '#123abc' in screen_text(transcript) and 'pending' in screen_text(transcript), 'latest pending color is visible before mining')
             press(b'gv')
-            wait(lambda: 'Ownership • x' in screen_text(transcript), 'ownership overlay enabled')
+            wait(lambda: 'Ownership • 32×32' in screen_text(transcript), 'ownership overlay enabled')
             press(b'pblue\r')
-            wait(lambda: status().get('mempool') == 3 and 'Canvas • x' in screen_text(transcript), 'successful paint returns to RGB view')
+            wait(lambda: status().get('mempool') == 3 and 'Canvas • 32×32' in screen_text(transcript), 'successful paint returns to RGB view')
             press(f':transfer 181 {fixtures["a_public"]}\r'.encode())
             wait(lambda: status().get('mempool') == 4, 'pending ownership transfer')
             press(b'porange\r')
@@ -143,7 +143,7 @@ def ownership_case(binary):
             press(b':owned\r')
             wait(lambda: bool(owned_response()), 'scriptable owned history')
             receipt = next(row for row in owned_response() if row['parcel'] == 181)
-            assert receipt['x'] == 53 and receipt['y'] == 2
+            assert receipt['x'] == 21 and receipt['y'] == 5
             assert receipt['acquisition']['method'] == 'transfer'
             assert receipt['acquisition']['height'] == 2
             assert receipt['color'] == '0000ff', 'pending edits changed confirmed color'
@@ -257,7 +257,7 @@ def main():
             press(b'\x1b[B\x1b[Bn' + str(saved_port).encode() + b'\r')
             wait(lambda: status().get('port') == saved_port, 'TCP port from settings prompt')
             assert not status()['online'] and not status()['mining']
-            assert json.loads((Path(directory) / 'settings.json').read_text()) == {'mining_threads': 'all', 'port': saved_port, 'peers': []}
+            assert json.loads((Path(directory) / 'settings.json').read_text()) == {'mining_threads': 'all', 'mining_difficulty': 23, 'port': saved_port, 'peers': []}
             press(b'9a192.0.2.7\rWorkshop peer\r')
             wait(lambda: len(status().get('network_peers', [])) == 1, 'add saved peer from Network tab')
             assert status()['network_peers'][0]['alias'] == 'Workshop peer'
@@ -271,6 +271,24 @@ def main():
             press(b'd')
             wait(lambda: status().get('network_peers') == [], 'remove saved peer')
             assert json.loads((Path(directory) / 'settings.json').read_text())['peers'] == []
+            press(b'a192.0.2.8\rLuka peer\t ')
+            wait(lambda: 'Cross compatibility' in screen_text(transcript) and 'Grupa 1 - Luka' in screen_text(transcript), 'optional compatibility dropdown')
+            press(b'\x1b[B\r\r')
+            wait(lambda: len(status()['network_peers']) == 1, 'save Grupa 1 peer from dropdown')
+            assert status()['network_peers'][0]['compatibility'] == 'grupa1-luka'
+            assert status()['network_peers'][0]['address'] == '192.0.2.8:8080'
+            press(b'a192.0.2.9\rSecond Luka\t\x1b[C\r')
+            wait(lambda: len(status()['network_peers']) == 2, 'multiple Grupa 1 peers')
+            assert all(peer['compatibility'] == 'grupa1-luka' for peer in status()['network_peers'])
+            press(b'e\x15Renamed Luka\r')
+            wait(lambda: status()['network_peers'][0]['alias'] == 'Renamed Luka', 'edit preserves compatibility selection')
+            saved_peers = json.loads((Path(directory) / 'settings.json').read_text())['peers']
+            assert all(peer['compatibility'] == 'grupa1-luka' for peer in saved_peers)
+            assert not status()['online']
+            press(b'd')
+            wait(lambda: len(status()['network_peers']) == 1, 'remove first compatibility peer')
+            press(b'd')
+            wait(lambda: status()['network_peers'] == [], 'remove second compatibility peer')
             if limit_cpus is not None:
                 press(b'm')
                 wait(lambda: status().get('mining') and status().get('active_mining_threads') == status().get('available_threads'), 'all available mining workers start')
@@ -302,6 +320,7 @@ def main():
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 16, 48, 0, 0))
             process.send_signal(signal.SIGWINCH)
             press(b'\x1b[B' * 35)
+            wait(lambda: 'averaged overview' in screen_text(transcript) and '(31, 31)' in screen_text(transcript), 'full-map overview and selected coordinates after resize')
             press(b'q')
             wait(lambda: process.poll() is not None, 'graceful quit')
             assert process.returncode == 0
@@ -326,7 +345,7 @@ def main():
             os.close(master)
             os.close(slave)
     ownership_case(args.binary)
-    print('PASS: PTY navigation, settings persistence, TCP port selection and live thread changes, controls, outlined RGB parcels, owned receipts, pending previews, rejected edits, real color confirmation, and terminal restoration')
+    print('PASS: PTY navigation, settings persistence, TCP port selection and live thread changes, controls, responsive RGB canvas, owned receipts, pending previews, rejected edits, real color confirmation, and terminal restoration')
 
 
 if __name__ == '__main__':

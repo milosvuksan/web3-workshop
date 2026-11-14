@@ -24,7 +24,7 @@ pub struct Sender {
     slots: Arc<Semaphore>,
 }
 pub(crate) struct Queued {
-    message: Message,
+    pub(crate) message: Message,
     when: Instant,
     _permit: OwnedSemaphorePermit,
 }
@@ -160,11 +160,15 @@ pub struct Network {
     tasks: Vec<JoinHandle<()>>,
     stop: watch::Sender<bool>,
     peers: watch::Sender<Vec<SocketAddr>>,
+    compatibility: watch::Sender<Option<super::compat::Config>>,
 }
 impl Network {
     /// Update outgoing targets without interrupting the listener or other peers.
     pub fn set_peers(&self, peers: Vec<SocketAddr>) {
         self.peers.send_replace(peers);
+    }
+    pub fn set_compatibility(&self, config: super::compat::Config) {
+        self.compatibility.send_replace(Some(config));
     }
     /// Wait until every listener, reconnect loop, and transport has closed.
     pub async fn shutdown(mut self) {
@@ -189,11 +193,26 @@ pub async fn start(
     seed: u64,
     discovery: Option<super::discovery::Discovery>,
 ) -> crate::Result<Network> {
+    start_compatible(listen, peers, events, enabled, seed, discovery, None).await
+}
+
+pub async fn start_compatible(
+    listen: SocketAddr,
+    peers: Vec<SocketAddr>,
+    events: mpsc::Sender<Event>,
+    enabled: bool,
+    seed: u64,
+    discovery: Option<super::discovery::Discovery>,
+    compatibility: Option<super::compat::Config>,
+) -> crate::Result<Network> {
     let listener = TcpListener::bind(listen).await?;
     let tcp_port = listener.local_addr()?.port();
     let udp = discovery.map(|d| d.bind()).transpose()?;
     let (stop, mut stopped) = watch::channel(false);
     let (peer_updates, mut configured) = watch::channel(peers);
+    let (compat_updates, mut compat_configured) = watch::channel(compatibility);
+    let incoming_compatibility = compat_configured.clone();
+    let mut outgoing_compatibility = compat_configured.clone();
     let incoming_events = events.clone();
     let slots = Arc::new(Semaphore::new(128));
     let mut tasks = Vec::new();
@@ -214,8 +233,20 @@ pub async fn start(
                 continue;
             };
             let events = incoming_events.clone();
+            let compatibility = incoming_compatibility.borrow().clone();
             incoming.spawn(async move {
                 let _permit = permit;
+                if let Some(config) = compatibility {
+                    let mut prefix = [0; 1];
+                    if matches!(
+                        timeout(Duration::from_secs(5), stream.peek(&mut prefix)).await,
+                        Ok(Ok(1))
+                    ) && matches!(prefix[0], b'G' | b'P' | b'H' | b'D' | b'O')
+                    {
+                        super::compat::http::serve(stream, config.state).await;
+                        return;
+                    }
+                }
                 connection(stream, address, events, enabled, seed).await;
             });
         }
@@ -231,8 +262,11 @@ pub async fn start(
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut bytes = [0; 1024];
         loop {
+            let compatibility = outgoing_compatibility.borrow().clone();
             let desired: std::collections::BTreeSet<_> = configured.borrow_and_update().iter().copied()
-                .chain(discovered.iter().copied()).filter(|address| *address != listen).collect();
+                .chain(discovered.iter().copied()).filter(|address| *address != listen)
+                .filter(|address| !compatibility.as_ref().is_some_and(|c| c.peers.iter().any(|p| p.address == *address && p.compatibility != crate::settings::CompatibilityProfile::Native)))
+                .collect();
             addresses.retain(|address, task: &mut tokio::task::AbortHandle| {
                 if desired.contains(address) { true } else { task.abort(); false }
             });
@@ -243,6 +277,7 @@ pub async fn start(
                 biased;
                 _ = stopped.changed() => break,
                 result = configured.changed() => { if result.is_err() { break; } },
+                result = outgoing_compatibility.changed() => { if result.is_err() { break; } },
                 result = async {
                     match &udp {
                         Some(socket) => socket.recv_from(&mut bytes).await,
@@ -271,10 +306,60 @@ pub async fn start(
         }
         outgoing.shutdown().await;
     }));
+    let mut stopped = stop.subscribe();
+    tasks.push(tokio::spawn(async move {
+        let mut active = std::collections::BTreeMap::new();
+        let mut polling = JoinSet::new();
+        loop {
+            let config = compat_configured.borrow_and_update().clone();
+            let desired: std::collections::BTreeSet<_> = config
+                .as_ref()
+                .map(|c| {
+                    c.peers
+                        .iter()
+                        .filter(|p| {
+                            p.compatibility == crate::settings::CompatibilityProfile::Grupa1Luka
+                        })
+                        .map(|p| p.address)
+                        .filter(|address| *address != listen)
+                        .collect()
+                })
+                .unwrap_or_default();
+            active.retain(|address, task: &mut tokio::task::AbortHandle| {
+                if desired.contains(address) {
+                    true
+                } else {
+                    task.abort();
+                    false
+                }
+            });
+            if let Some(config) = &config {
+                config
+                    .state
+                    .peers
+                    .lock()
+                    .unwrap()
+                    .retain(|address, _| desired.contains(address));
+                for address in desired {
+                    active.entry(address).or_insert_with(|| {
+                        polling.spawn(super::compat::http::poll(address, config.state.clone()))
+                    });
+                }
+            }
+            tokio::select! {
+                biased;
+                _ = stopped.changed() => break,
+                result = compat_configured.changed() => { if result.is_err() { break; } },
+                _ = polling.join_next(), if !polling.is_empty() => {},
+            }
+        }
+        polling.shutdown().await;
+    }));
     Ok(Network {
         tasks,
         stop,
         peers: peer_updates,
+        compatibility: compat_updates,
     })
 }
 

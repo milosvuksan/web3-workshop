@@ -4,10 +4,12 @@ mod color_editor;
 mod network;
 mod owned;
 mod settings;
+mod transfer;
 use crate::{
     Result, colors,
     diagnostics::{Runner, TASKS},
     ownership::{Acquisition, Source, timestamp_utc},
+    protocol::params::{HEIGHT, PARCELS, WIDTH},
     settings::{MAX_MINING_THREADS, MiningThreads},
     state::State,
 };
@@ -30,6 +32,7 @@ use std::{
     path::Path,
     time::Duration,
 };
+use transfer::{TransferAction, TransferMenu};
 
 const PAGES: &[&str] = &[
     "1 Canvas",
@@ -57,7 +60,7 @@ const CONTROLS: &[&str] = &[
     "Paint selected parcel",
     "Transfer selected parcel",
     "Owned parcels and colors",
-    "Settings (threads and TCP port)",
+    "Settings (threads, difficulty and TCP port)",
     "Quit program",
 ];
 const ACCENT: Color = Color::Cyan;
@@ -85,7 +88,9 @@ pub struct Input<'a> {
     pub owned: &'a BTreeMap<usize, Acquisition>,
     pub threads: MiningThreads,
     pub port: u16,
+    pub difficulty: u16,
     pub saved_peers: &'a [crate::settings::SavedPeer],
+    pub peer_status: &'a [Value],
 }
 pub struct App {
     terminal: DefaultTerminal,
@@ -95,12 +100,14 @@ pub struct App {
     selection: usize,
     owned_selection: Option<usize>,
     editor: Option<ColorEditor>,
+    transfer: Option<TransferMenu>,
     show_owned: bool,
     task: usize,
     control: usize,
     settings_selection: usize,
     thread_draft: usize,
     port_draft: u16,
+    difficulty_draft: u16,
     network: network::NetworkPage,
     command: Option<String>,
     ownership: bool,
@@ -130,12 +137,14 @@ impl App {
             selection: 0,
             owned_selection: None,
             editor: None,
+            transfer: None,
             show_owned: true,
             task: 0,
             control: 0,
             settings_selection: 1,
             thread_draft: 1,
             port_draft: 7001,
+            difficulty_draft: crate::settings::MIN_MINING_DIFFICULTY,
             network: network::NetworkPage::default(),
             command: None,
             ownership: false,
@@ -152,7 +161,9 @@ impl App {
             owned,
             threads,
             port,
+            difficulty,
             saved_peers,
+            peer_status,
         } = context;
         self.owned_selection = owned_selection(owned, self.owned_selection);
         // Bound event work per frame so input floods cannot starve networking.
@@ -181,6 +192,18 @@ impl App {
                         return Ok(Some(command));
                     }
                     EditAction::Continue => {}
+                }
+                continue;
+            }
+            if let Some(transfer) = &mut self.transfer {
+                match transfer.input(key, peer_status, owned.contains_key(&transfer.parcel())) {
+                    TransferAction::Cancel => self.transfer = None,
+                    TransferAction::Manual(parcel) => {
+                        self.transfer = None;
+                        self.command = Some(format!("transfer {parcel} "));
+                    }
+                    TransferAction::Submit(command) => return Ok(Some(command)),
+                    TransferAction::Continue => {}
                 }
                 continue;
             }
@@ -216,7 +239,7 @@ impl App {
                     self.page = 8;
                     self.reset_scroll();
                 }
-                KeyCode::Char('8' | 's') => self.open_settings(threads, port),
+                KeyCode::Char('8' | 's') => self.open_settings(threads, port, difficulty),
                 KeyCode::Char('q') => return Ok(Some("quit".into())),
                 KeyCode::Char(':') => self.command = Some(String::new()),
                 KeyCode::Char('m') => {
@@ -236,9 +259,7 @@ impl App {
                     return Ok(Some("export".into()));
                 }
                 KeyCode::Char('p') => self.edit_color(owned),
-                KeyCode::Char('t') => {
-                    self.command = Some(format!("transfer {} ", self.active_parcel()))
-                }
+                KeyCode::Char('t') => self.open_transfer(owned, self.active_parcel()),
                 KeyCode::Char('v') => self.ownership = !self.ownership,
                 KeyCode::Char('h') => self.show_owned = !self.show_owned,
                 KeyCode::Char('b') => {
@@ -262,14 +283,14 @@ impl App {
                 KeyCode::Tab => {
                     self.page = (self.page + 1) % PAGES.len();
                     if self.page == 7 {
-                        self.open_settings(threads, port);
+                        self.open_settings(threads, port, difficulty);
                     }
                     self.reset_scroll();
                 }
                 KeyCode::BackTab => {
                     self.page = (self.page + PAGES.len() - 1) % PAGES.len();
                     if self.page == 7 {
-                        self.open_settings(threads, port);
+                        self.open_settings(threads, port, difficulty);
                     }
                     self.reset_scroll();
                 }
@@ -292,32 +313,47 @@ impl App {
                     self.settings_selection = self.settings_selection.saturating_sub(1)
                 }
                 KeyCode::Down if self.page == 7 => {
-                    self.settings_selection = (self.settings_selection + 1).min(2)
+                    self.settings_selection = (self.settings_selection + 1).min(3)
                 }
-                KeyCode::Left | KeyCode::Char('-') if self.page == 7 => {
-                    if self.settings_selection == 2 {
-                        self.port_draft = self.port_draft.saturating_sub(1).max(1);
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+' | '=')
+                    if self.page == 7 =>
+                {
+                    let delta = if matches!(key.code, KeyCode::Left | KeyCode::Char('-')) {
+                        -1
                     } else {
-                        self.settings_selection = 1;
-                        self.thread_draft = self.thread_draft.saturating_sub(1).max(1);
-                    }
-                }
-                KeyCode::Right | KeyCode::Char('+' | '=') if self.page == 7 => {
-                    if self.settings_selection == 2 {
-                        self.port_draft = self.port_draft.saturating_add(1);
-                    } else {
-                        self.settings_selection = 1;
-                        self.thread_draft = (self.thread_draft + 1).min(MAX_MINING_THREADS);
+                        1
+                    };
+                    match self.settings_selection {
+                        3 => {
+                            self.difficulty_draft =
+                                self.difficulty_draft.saturating_add_signed(delta).clamp(
+                                    crate::settings::MIN_MINING_DIFFICULTY,
+                                    crate::settings::MAX_MINING_DIFFICULTY,
+                                )
+                        }
+                        2 => self.port_draft = self.port_draft.saturating_add_signed(delta).max(1),
+                        _ => {
+                            self.settings_selection = 1;
+                            self.thread_draft = self
+                                .thread_draft
+                                .saturating_add_signed(delta.into())
+                                .clamp(1, MAX_MINING_THREADS);
+                        }
                     }
                 }
                 KeyCode::Char('n') if self.page == 7 => {
-                    self.command = Some(if self.settings_selection == 2 {
+                    self.command = Some(if self.settings_selection == 3 {
+                        "difficulty ".into()
+                    } else if self.settings_selection == 2 {
                         "port ".into()
                     } else {
                         "threads ".into()
                     })
                 }
                 KeyCode::Enter if self.page == 7 => {
+                    if self.settings_selection == 3 {
+                        return Ok(Some(format!("difficulty {}", self.difficulty_draft)));
+                    }
                     if self.settings_selection == 2 {
                         return Ok(Some(format!("port {}", self.port_draft)));
                     }
@@ -337,9 +373,15 @@ impl App {
                 KeyCode::Left if self.page == 0 => {
                     self.selection = self.selection.saturating_sub(1)
                 }
-                KeyCode::Right if self.page == 0 => self.selection = (self.selection + 1).min(2047),
-                KeyCode::Up if self.page == 0 => self.selection = self.selection.saturating_sub(64),
-                KeyCode::Down if self.page == 0 => self.selection = (self.selection + 64).min(2047),
+                KeyCode::Right if self.page == 0 => {
+                    self.selection = (self.selection + 1).min(PARCELS - 1)
+                }
+                KeyCode::Up if self.page == 0 => {
+                    self.selection = self.selection.saturating_sub(WIDTH)
+                }
+                KeyCode::Down if self.page == 0 => {
+                    self.selection = (self.selection + WIDTH).min(PARCELS - 1)
+                }
                 KeyCode::Up if self.page == 1 => self.control = self.control.saturating_sub(1),
                 KeyCode::Down if self.page == 1 => {
                     self.control = (self.control + 1).min(CONTROLS.len() - 1)
@@ -369,12 +411,12 @@ impl App {
                     }
                     2 => return Ok(Some("export".into())),
                     3 => self.edit_color(owned),
-                    4 => self.command = Some(format!("transfer {} ", self.selection)),
+                    4 => self.open_transfer(owned, self.selection),
                     5 => {
                         self.page = 6;
                         self.reset_scroll();
                     }
-                    6 => self.open_settings(threads, port),
+                    6 => self.open_settings(threads, port, difficulty),
                     _ => return Ok(Some("quit".into())),
                 },
                 KeyCode::Enter if self.page == 2 => {
@@ -388,9 +430,17 @@ impl App {
         }
         Ok(None)
     }
-    fn open_settings(&mut self, threads: MiningThreads, port: u16) {
+    fn open_transfer(&mut self, owned: &BTreeMap<usize, Acquisition>, parcel: usize) {
+        if owned.contains_key(&parcel) {
+            self.transfer = Some(TransferMenu::new(parcel));
+        } else {
+            self.message = "Select a parcel owned by this identity to transfer it".into();
+        }
+    }
+    fn open_settings(&mut self, threads: MiningThreads, port: u16, difficulty: u16) {
         self.page = 7;
         self.port_draft = port.max(1);
+        self.difficulty_draft = difficulty;
         self.settings_selection = usize::from(threads != MiningThreads::All);
         self.thread_draft = threads.resolved().min(MAX_MINING_THREADS);
         self.reset_scroll();
@@ -403,6 +453,21 @@ impl App {
         }
     }
     pub fn command_result(&mut self, command: &str, result: &Result<bool>, mining: bool) {
+        if command.split_whitespace().next() == Some("transfer") {
+            match result {
+                Ok(_) => {
+                    self.transfer = None;
+                    self.message = "Transfer queued; awaiting a mined block".into();
+                }
+                Err(error) => {
+                    self.message = format!("Transfer rejected: {error}");
+                    if let Some(menu) = &mut self.transfer {
+                        menu.reject(self.message.clone());
+                    }
+                }
+            }
+            return;
+        }
         if command.split_whitespace().next() == Some("peer") {
             self.network.command_result(result);
             self.message = match result {
@@ -411,34 +476,41 @@ impl App {
             };
             return;
         }
-        if command.split_whitespace().next() == Some("port") {
+        let mut words = command.split_whitespace();
+        let setting = words.next().unwrap_or_default();
+        let messages = match setting {
+            "difficulty" => Some(("Mining difficulty saved", "Difficulty rejected")),
+            "port" => Some(("TCP port saved", "Port setting rejected")),
+            "threads" => Some(("Mining thread preference saved", "Thread setting rejected")),
+            _ => None,
+        };
+        if let Some((success, failure)) = messages {
             self.message = match result {
-                Ok(_) => "TCP port saved".into(),
-                Err(error) => format!("Port setting rejected: {error}"),
+                Ok(_) => success.into(),
+                Err(error) => format!("{failure}: {error}"),
             };
             if result.is_ok()
-                && let Some(port) = command
-                    .split_whitespace()
-                    .nth(1)
-                    .and_then(|value| value.parse().ok())
+                && let Some(value) = words.next()
             {
-                self.port_draft = port;
-            }
-            return;
-        }
-        if command.split_whitespace().next() == Some("threads") {
-            self.message = match result {
-                Ok(_) => "Mining thread preference saved".into(),
-                Err(error) => format!("Thread setting rejected: {error}"),
-            };
-            if result.is_ok()
-                && let Some(threads) = command
-                    .split_whitespace()
-                    .nth(1)
-                    .and_then(|value| value.parse::<MiningThreads>().ok())
-            {
-                self.settings_selection = usize::from(threads != MiningThreads::All);
-                self.thread_draft = threads.resolved().min(MAX_MINING_THREADS);
+                match setting {
+                    "difficulty" => {
+                        if let Ok(value) = value.parse() {
+                            self.difficulty_draft = value;
+                        }
+                    }
+                    "port" => {
+                        if let Ok(value) = value.parse() {
+                            self.port_draft = value;
+                        }
+                    }
+                    "threads" => {
+                        if let Ok(threads) = value.parse::<MiningThreads>() {
+                            self.settings_selection = usize::from(threads != MiningThreads::All);
+                            self.thread_draft = threads.resolved().min(MAX_MINING_THREADS);
+                        }
+                    }
+                    _ => unreachable!(),
+                }
             }
             return;
         }
@@ -477,17 +549,20 @@ impl App {
         }
     }
     fn move_owned(&mut self, owned: &BTreeMap<usize, Acquisition>, amount: isize) {
-        let ids: Vec<_> = owned.keys().copied().collect();
-        if ids.is_empty() {
-            self.owned_selection = None;
-            return;
-        }
-        let index = ids
-            .iter()
+        let index = owned
+            .keys()
             .position(|id| Some(*id) == self.owned_selection)
             .unwrap_or(0);
-        self.owned_selection = Some(ids[index.saturating_add_signed(amount).min(ids.len() - 1)]);
+        self.owned_selection = owned
+            .keys()
+            .nth(
+                index
+                    .saturating_add_signed(amount)
+                    .min(owned.len().saturating_sub(1)),
+            )
+            .copied();
     }
+
     fn reset_scroll(&mut self) {
         self.scroll = if matches!(self.page, 3 | 5) {
             u16::MAX
@@ -507,12 +582,14 @@ impl App {
             selection,
             owned_selection,
             editor,
+            transfer,
             show_owned,
             task,
             control,
             settings_selection,
             thread_draft,
             port_draft,
+            difficulty_draft,
             network,
             command,
             ownership,
@@ -526,7 +603,7 @@ impl App {
                 frame.render_widget(Paragraph::new("Pixel Chain\nResize terminal to at least 36×10.\nq quits; o network; m mining.").wrap(Wrap { trim: false }), area);
                 return;
             }
-            let regions = Layout::vertical([Constraint::Length(2), Constraint::Length(1), Constraint::Min(1), Constraint::Length(4)]).split(area);
+            let regions = Layout::vertical([Constraint::Length(2), Constraint::Length(1), Constraint::Min(1), Constraint::Length(if *page == 0 && area.height <= 26 { 3 } else { 4 })]).split(area);
             let online = view.status["online"].as_bool().unwrap_or(false);
             let mining = view.status["mining"].as_bool().unwrap_or(false);
             let title = Line::from(vec![
@@ -552,7 +629,7 @@ impl App {
                 5 => text_panel(frame, regions[2], "Keyboard reference", HELP, scroll),
                 6 => owned_menu(frame, regions[2], &view, *owned_selection),
                 8 => network.draw(frame, regions[2], &view.status),
-                _ => settings_panel(frame, regions[2], &view.status, *settings_selection, *thread_draft, *port_draft),
+                _ => settings_panel(frame, regions[2], &view.status, *settings_selection, *thread_draft, *port_draft, *difficulty_draft),
             }
             let (text, title) = match command {
                 Some(line) => (format!(":{line}█"), "Command • Enter submits • Esc cancels"),
@@ -564,6 +641,7 @@ impl App {
             frame.render_widget(Paragraph::new(text).block(panel(title)).style(Style::default().fg(if command.is_some() { ACCENT } else { Color::Gray })), regions[3]);
             if let Some(editor) = editor { editor.draw(frame, &view); }
             network.draw_editor(frame);
+            if let Some(transfer) = transfer { transfer.draw(frame, view.status["network_peers"].as_array().map_or(&[], Vec::as_slice)); }
         })?;
         Ok(())
     }
@@ -598,6 +676,16 @@ impl Drop for App {
     fn drop(&mut self) {
         ratatui::restore();
     }
+}
+fn centered(area: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(area.width);
+    let height = height.min(area.height);
+    Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    )
 }
 fn panel(title: &str) -> Block<'_> {
     Block::default()
@@ -659,7 +747,7 @@ fn diagnostics(
     menu(
         frame,
         regions[0],
-        "Tests / benchmarks • ↑/↓ • Enter run • x stop",
+        "Tests / hash-rate check • ↑/↓ • Enter run • x stop",
         TASKS,
         task,
     );
@@ -691,44 +779,153 @@ fn diagnostics(
         scroll,
     );
 }
-const HELP: &str = "Tab / Shift-Tab or 1–9   Switch pages\n↑/↓/←/→ on Canvas         Select parcel (viewport follows on small terminals)\nv                        Toggle RGB / ownership colors\np / t                    Color picker / transfer selected parcel\nb / 7                    Open owned parcels and acquisition history\nh                        Show/hide your parcel outlines on the canvas\ns / 8                    Settings: mining threads and TCP port\n9                        Network: saved IP addresses, aliases, connection status\nNetwork page             a adds; Enter/e edits; d removes; o online/offline\nColor picker             Type a name or hex; ↑/↓ select; Tab completes; Enter sends; Esc cancels\nm                        Start or stop mining independently\no                        Go offline or reconnect independently\ne                        Export status.json, state.json and canvas.ppm\n:                        Open command input; Esc cancels\nq / Ctrl-C               Stop jobs and mining, close sockets, restore terminal\n\nControls submenu: ↑/↓ then Enter to apply.\nTests submenu: ↑/↓ then Enter; x cancels the active diagnostic.\nDebug submenu: ←/→ selects Status, Peers, Chain, Mempool, Sync, Config.\nPgUp / PgDn scroll output; Home oldest; End follows latest.\n\nCommands:\nstatus | identity | owned | mining on|off | threads COUNT|all | port PORT | network on|off\npeer add IP[:PORT] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [ALIAS] | peer remove IP[:PORT]\npaint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | export [PATH.ppm] | quit\n\nDiagnostic jobs keep this UI responsive and save full output under data-dir/diagnostics.\nCargo, Python 3 and OpenSSL are needed for the full validation suite.\nSet PIXEL_WORKSPACE if the executable has moved away from its source tree.\nTests can start isolated local nodes even while this node is offline.\nMining benchmarks use real 23-bit proof of work and can take several minutes.\n\nIdentity persists, but chain storage is in memory. Restart with surviving peers for recovery.";
+const HELP: &str = "Tab / Shift-Tab or 1–9   Switch pages\n↑/↓/←/→ on Canvas         Select parcel on the full map\nv                        Toggle RGB / ownership colors\np / t                    Color picker / transfer selected parcel\nb / 7                    Open owned parcels and acquisition history\nh                        Show/hide your owned parcel markers\ns / 8                    Settings: mining threads, difficulty and TCP port\n9                        Network: saved IP addresses, aliases, connection status\nNetwork page             a adds; Enter/e edits; d removes; o online/offline\nPeer editor              Tab to Cross compatibility; Space opens; arrows select; Enter saves\nTransfer menu            ↑/↓ select a connected node; Enter queues; m enters a public key
+Color picker             Type a name or hex; ↑/↓ select; Tab completes; Enter sends; Esc cancels\nm                        Start or stop mining independently\no                        Go offline or reconnect independently\ne                        Export status.json, state.json and canvas.ppm\n:                        Open command input; Esc cancels\nq / Ctrl-C               Stop jobs and mining, close sockets, restore terminal\n\nControls submenu: ↑/↓ then Enter to apply.\nTests submenu: ↑/↓ then Enter; x cancels the active diagnostic.\nDebug submenu: ←/→ selects Status, Peers, Chain, Mempool, Sync, Config.\nPgUp / PgDn scroll output; Home oldest; End follows latest.\n\nCommands:\nstatus | identity | owned | mining on|off | threads COUNT|all | difficulty BITS | port PORT | network on|off\npeer add IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer remove IP[:PORT]\npaint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | export [PATH.ppm] | quit\nGrupa 1 - Luka uses a separate chain; native canvas and mining stay on the native chain.\ngrupa1 status | grupa1 mining on|off | grupa1 paint PARCEL COLOR | grupa1 transfer PARCEL KEY\nGrupa 1 HTTP routes share this node's configured port; no handshake or identity exchange.\n\nDiagnostic jobs keep this UI responsive and save full output under data-dir/diagnostics.\nCargo, Python 3 and OpenSSL are needed for the full validation suite.\nSet PIXEL_WORKSPACE if the executable has moved away from its source tree.\nTests can start isolated local nodes even while this node is offline.\nThe hash-rate check measures header hashing speed.\n\nIdentity persists, but chain storage is in memory. Restart with surviving peers for recovery.";
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
     #[test]
-    fn canvas_uses_live_rgb_and_handles_small_viewports() {
+    fn canvas_shows_the_full_map_without_panning() {
         let mut state = State::default();
         state.parcels[1].color.0 = [255, 128, 0];
-        state.parcels[65].color.0 = [0, 128, 255];
-        for (width, height) in [(120, 24), (80, 24), (36, 10)] {
+        state.parcels[WIDTH + 1].color.0 = [0, 128, 255];
+        state.parcels[PARCELS - 1].color.0 = [255, 0, 128];
+        let view = View {
+            status: Value::Null,
+            state: &state,
+            owned: &BTreeMap::new(),
+            pending: &BTreeMap::new(),
+            logs: &VecDeque::new(),
+            debug: String::new(),
+        };
+        for (width, height) in [
+            (120, 18),
+            (120, 24),
+            (80, 24),
+            (68, 12),
+            (67, 22),
+            (36, 10),
+            (12, 6),
+            (1, 1),
+        ] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-            terminal
-                .draw(|frame| {
-                    canvas(
-                        frame,
-                        frame.area(),
-                        &View {
-                            status: Value::Null,
-                            state: &state,
-                            owned: &BTreeMap::new(),
-                            pending: &BTreeMap::new(),
-                            logs: &VecDeque::new(),
-                            debug: String::new(),
-                        },
-                        if width == 120 { 0 } else { 2047 },
-                        false,
-                        true,
-                    )
-                })
-                .unwrap();
-            if width == 120 {
+            let mut first_image = None;
+            for selected in [0, PARCELS - 1] {
+                terminal
+                    .draw(|frame| canvas(frame, frame.area(), &view, selected, false, true))
+                    .unwrap();
                 let cells = terminal.backend().buffer();
-                assert_eq!(cells[(6, 2)].bg, Color::Rgb(255, 128, 0));
-                assert_eq!(cells[(6, 5)].bg, Color::Rgb(0, 128, 255));
+                assert!(
+                    width == 1
+                        || cells
+                            .content()
+                            .iter()
+                            .any(|cell| cell.fg == Color::Cyan
+                                || cell.underline_color == Color::Cyan),
+                    "selection remains visible even at the bottom-right corner"
+                );
+                let image = cells
+                    .content()
+                    .iter()
+                    .filter(|cell| cell.symbol() == "▀")
+                    .map(|cell| (cell.fg, cell.bg))
+                    .collect::<Vec<_>>();
+                if let Some(first) = &first_image {
+                    assert_eq!(
+                        &image, first,
+                        "moving selection must preserve every image color and its position"
+                    );
+                }
+                first_image = Some(image);
+                if (width, height) == (120, 18) {
+                    assert_eq!(cells[(30, 1)].fg, Color::Rgb(255, 128, 0));
+                    assert_eq!(cells[(30, 1)].bg, Color::Rgb(0, 128, 255));
+                    assert_eq!(cells[(60, 16)].bg, Color::Rgb(255, 0, 128));
+                    assert_eq!(cells[(29, 1)].fg, Color::Rgb(0, 0, 0));
+                    assert_eq!(first_image.as_ref().unwrap().len(), 32 * 16);
+                }
             }
         }
+    }
+
+    #[test]
+    fn narrow_canvas_keeps_selected_details_and_reports_averaging() {
+        let mut state = State::default();
+        state.parcels[PARCELS - 1].color.0 = [255, 0, 128];
+        let view = View {
+            status: Value::Null,
+            state: &state,
+            owned: &BTreeMap::new(),
+            pending: &BTreeMap::new(),
+            logs: &VecDeque::new(),
+            debug: String::new(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(48, 9)).unwrap();
+        terminal
+            .draw(|frame| canvas(frame, frame.area(), &view, PARCELS - 1, false, true))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("averaged overview"));
+        assert!(text.contains("#1023 (31, 31)"));
+        assert!(text.contains("#ff0080"));
+        assert!(text.contains("p color"));
+        assert!(text.contains("t transfer"));
+    }
+
+    #[test]
+    fn pending_inspector_keeps_the_full_owner_and_actions_visible() {
+        let mut state = State::default();
+        let owner = crate::protocol::Bytes([0xab; 32]);
+        state.parcels[0].owner = Some(owner);
+        let owned = BTreeMap::from([(
+            0,
+            Acquisition {
+                height: 1,
+                timestamp: 0,
+                block: Default::default(),
+                source: Source::Mining,
+            },
+        )]);
+        let pending = BTreeMap::from([(
+            0,
+            crate::mempool::PendingPaint {
+                color: colors::parse("red").unwrap(),
+                transaction: Default::default(),
+            },
+        )]);
+        let view = View {
+            status: Value::Null,
+            state: &state,
+            owned: &owned,
+            pending: &pending,
+            logs: &VecDeque::new(),
+            debug: String::new(),
+        };
+        let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
+        terminal
+            .draw(|frame| canvas(frame, frame.area(), &view, 0, false, true))
+            .unwrap();
+        let cells = terminal.backend().buffer();
+        let text = (1..15)
+            .map(|y| {
+                (91..119)
+                    .map(|x| cells[(x, y)].symbol())
+                    .collect::<String>()
+                    .trim()
+                    .to_owned()
+            })
+            .collect::<String>();
+        assert!(text.contains(&owner.to_string()));
+        assert!(text.contains("#ff0000 PENDING"));
+        assert!(text.contains("t transfer"));
     }
 
     #[test]
@@ -753,7 +950,7 @@ mod tests {
     }
 
     #[test]
-    fn map_outlines_each_owned_parcel_without_covering_its_color() {
+    fn map_marks_owned_parcels_without_covering_their_colors() {
         let receipt = Acquisition {
             height: 1,
             timestamp: 0,
@@ -762,9 +959,9 @@ mod tests {
         };
         let owned = BTreeMap::from([
             (0, receipt.clone()),
-            (64, receipt.clone()),
+            (2 * WIDTH, receipt.clone()),
             (2, receipt.clone()),
-            (67, receipt),
+            (WIDTH + 3, receipt),
         ]);
         let state = State::default();
         let view = View {
@@ -775,31 +972,37 @@ mod tests {
             logs: &VecDeque::new(),
             debug: String::new(),
         };
-        let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(120, 18)).unwrap();
         terminal
             .draw(|frame| canvas(frame, frame.area(), &view, 0, false, true))
             .unwrap();
         let cells = terminal.backend().buffer();
-        assert_eq!(cells[(1, 1)].symbol(), "┏");
-        assert_eq!(cells[(1, 1)].fg, Color::Yellow);
-        assert_eq!(cells[(2, 2)].bg, Color::Rgb(0, 0, 0));
-        assert_eq!(
-            cells[(2, 2)].symbol(),
-            "›",
-            "selection stays inside the outline"
-        );
-        assert_eq!(cells[(9, 1)].symbol(), "┏");
-        assert_eq!(cells[(13, 4)].symbol(), "┏");
-        assert_eq!(cells[(5, 1)].fg, Color::DarkGray);
+        // A native-size image is centered in the map panel (90×18).
+        // The two rows in each half-block keep their exact confirmed colors.
+        assert_eq!(cells[(29, 1)].underline_color, Color::Cyan);
+        assert_eq!(cells[(31, 1)].underline_color, Color::Yellow);
+        assert_eq!(cells[(29, 2)].underline_color, Color::Yellow);
+        assert_eq!(cells[(32, 1)].underline_color, Color::Yellow);
+        assert_eq!(cells[(29, 1)].fg, Color::Rgb(0, 0, 0));
+        assert_eq!(cells[(29, 1)].bg, Color::Rgb(0, 0, 0));
+        assert_eq!(cells[(30, 1)].symbol(), "▀");
+        assert!(!cells[(30, 1)].modifier.contains(Modifier::UNDERLINED));
         terminal
             .draw(|frame| canvas(frame, frame.area(), &view, 0, false, false))
             .unwrap();
-        assert_eq!(terminal.backend().buffer()[(9, 1)].symbol(), "┌");
-        assert_eq!(terminal.backend().buffer()[(9, 1)].fg, Color::DarkGray);
+        assert!(
+            !terminal.backend().buffer()[(31, 1)]
+                .modifier
+                .contains(Modifier::UNDERLINED)
+        );
+        assert_eq!(
+            terminal.backend().buffer()[(29, 1)].underline_color,
+            Color::Cyan
+        );
     }
 
     #[test]
-    fn pending_color_is_visible_inside_outline_and_confirmation_updates_feedback() {
+    fn pending_color_is_visible_on_full_map_and_confirmation_updates_feedback() {
         let receipt = Acquisition {
             height: 1,
             timestamp: 0,
@@ -826,12 +1029,15 @@ mod tests {
             logs: &VecDeque::new(),
             debug: String::new(),
         };
-        let mut terminal = Terminal::new(TestBackend::new(120, 24)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(120, 18)).unwrap();
         terminal
             .draw(|frame| canvas(frame, frame.area(), &view, 2, false, true))
             .unwrap();
-        assert_eq!(terminal.backend().buffer()[(10, 2)].bg, colors::rgb(red));
-        assert_eq!(terminal.backend().buffer()[(9, 1)].fg, Color::Yellow);
+        assert_eq!(terminal.backend().buffer()[(31, 1)].fg, colors::rgb(red));
+        assert_eq!(
+            terminal.backend().buffer()[(31, 1)].underline_color,
+            Color::Cyan
+        );
         assert_eq!(
             view.state.parcels[2].color, blue,
             "preview must not change consensus state"

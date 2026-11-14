@@ -151,7 +151,7 @@ fn bounds_signature_ownership_and_counter_exhaustion() {
     let mut state = c.head().state.clone();
     let original = state.clone();
     let mut tx = transaction("paint");
-    tx.parcel = 2048;
+    tx.parcel = 1024;
     assert!(state.apply(&tx).is_err());
     tx = transaction("paint");
     tx.signature.0[0] ^= 1;
@@ -191,9 +191,9 @@ fn allocation_cycles_full_canvas_and_large_timestamp() {
     assert_eq!(full.reward(h, u64::MAX, miner), None);
     let mut large = State::default();
     large.parcels[1].owner = Some(miner);
-    assert_eq!(large.reward(h, u64::MAX, miner), Some(2047));
+    assert_eq!(large.reward(h, u64::MAX, miner), Some(1023));
     let mut even = State::default();
-    for i in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 0] {
+    for i in [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 0] {
         even.parcels[i].owner = Some(miner);
     }
     assert_eq!(even.reward(h, 2, miner), None);

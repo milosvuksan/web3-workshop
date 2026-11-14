@@ -4,7 +4,6 @@ use baneworkshop::{
 };
 use clap::Parser;
 use sha2::{Digest, Sha256};
-mod benchmark;
 fn run_node(config: baneworkshop::config::Config, tui: bool) -> baneworkshop::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -25,7 +24,6 @@ fn main() {
         Command::Tui(config) => run_node(config, true),
         Command::Node(config) => run_node(config, false),
         Command::Key { file } => baneworkshop::cli::key(file),
-        Command::BenchmarkMining { samples, json } => benchmark::run(samples, json),
         Command::Benchmark { hashes } => {
             let mut bytes = genesis().canonical_bytes();
             bytes.truncate(bytes.len() - 8);

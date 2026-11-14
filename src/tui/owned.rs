@@ -29,7 +29,7 @@ pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selecte
         let name = colors::name(color).unwrap_or("custom");
         ListItem::new(vec![
             Line::from(vec![
-                Span::raw(format!("{id:4} ({:2},{:2}) ", id % 64, id / 64)),
+                Span::raw(format!("{id:4} ({:2},{:2}) ", id % WIDTH, id / WIDTH)),
                 Span::styled("  ", Style::default().bg(colors::rgb(color))),
                 Span::raw(format!(
                     " #{color} {name}{}",
@@ -81,8 +81,8 @@ pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selecte
         );
         let text = format!(
             "Parcel {id} • x={} y={}\nConfirmed #{}\n{color_status}\n\nReceived: {}\nVia: {source}\nHeight: {}\nBlock: {}\n\nTime is the confirming block timestamp.\n\nEnter / p: edit color\nt: transfer • g: locate on canvas",
-            id % 64,
-            id / 64,
+            id % WIDTH,
+            id / WIDTH,
             view.state.parcels[id].color,
             timestamp_utc(receipt.timestamp),
             receipt.height,

@@ -26,8 +26,6 @@ pub const TASKS: &[&str] = &[
     "Terminal interface smoke test (Unix PTY)",
     "Three-node workshop demo (builds release first)",
     "Hash-rate benchmark",
-    "Mining benchmark (30 full-difficulty blocks)",
-    "Live node benchmark (100 blocks; builds release first)",
 ];
 
 #[derive(Clone, Debug)]
@@ -52,6 +50,12 @@ fn cargo(args: &[&str]) -> Step {
 fn python(script: &str) -> Step {
     Step::new("python3", &[script])
 }
+fn release_check(script: &str) -> Step {
+    Step::new(
+        "python3",
+        &[script, "--binary", "target/release/baneworkshop"],
+    )
+}
 fn build() -> Step {
     cargo(&["build", "--release", "--locked"])
 }
@@ -71,47 +75,13 @@ fn plan(task: usize) -> Vec<Step> {
             build(),
             python("scripts/verify-vectors.py"),
             python("scripts/network-fault-test.py"),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-network-settings.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-peers.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-shutdown.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-controls.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-tui.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
-            Step::new("python3", &["scripts/workshop-demo"]),
+            release_check("scripts/test-network-settings.py"),
+            release_check("scripts/test-peers.py"),
+            release_check("scripts/test-compatibility.py"),
+            release_check("scripts/test-shutdown.py"),
+            release_check("scripts/test-controls.py"),
+            release_check("scripts/test-tui.py"),
+            python("scripts/workshop-demo"),
         ],
         1 => vec![cargo(&["test", "--locked", "--all-targets"])],
         2..=5 => vec![cargo(&[
@@ -134,22 +104,9 @@ fn plan(task: usize) -> Vec<Step> {
         10 => vec![
             build(),
             python("scripts/network-fault-test.py"),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-network-settings.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
-            Step::new(
-                "python3",
-                &[
-                    "scripts/test-peers.py",
-                    "--binary",
-                    "target/release/baneworkshop",
-                ],
-            ),
+            release_check("scripts/test-network-settings.py"),
+            release_check("scripts/test-peers.py"),
+            release_check("scripts/test-compatibility.py"),
         ],
         11..=13 => vec![
             cargo(&["build", "--locked"]),
@@ -161,19 +118,8 @@ fn plan(task: usize) -> Vec<Step> {
                 ][task - 11],
             ),
         ],
-        14 => vec![build(), Step::new("python3", &["scripts/workshop-demo"])],
+        14 => vec![build(), python("scripts/workshop-demo")],
         15 => vec![cargo(&["run", "--release", "--locked", "--", "benchmark"])],
-        16 => vec![cargo(&[
-            "run",
-            "--release",
-            "--locked",
-            "--",
-            "benchmark-mining",
-            "--samples",
-            "30",
-            "--json",
-        ])],
-        17 => vec![build(), python("scripts/benchmark-node.py")],
         _ => Vec::new(),
     }
 }
@@ -391,6 +337,7 @@ mod tests {
             "network-fault-test.py",
             "test-network-settings.py",
             "test-peers.py",
+            "test-compatibility.py",
             "workshop-demo",
         ] {
             assert!(suite.contains(script));

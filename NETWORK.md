@@ -199,14 +199,18 @@ primi block:
         posalji blok JEDNOM svim spremnim sesijama (ukljucujuci i onu od koje je stigao)
         proveri blokove na cekanju: ako im je roditelj sada poznat, obradi ih istim postupkom
     NA CEKANJE:
+        ako hes nema >= 23 nulta bita: odbaci
         sacuvaj blok (najvise 1024)
-        dodaj heš roditelja u trazene
-        odmah posalji get_block za roditelja istoj sesiji
+        ako roditelj nije poznat (ni u lancu ni na cekanju):
+            dodaj heš roditelja u trazene
+            odmah posalji get_block za roditelja istoj sesiji
     NEISPRAVAN:
         upisi u log, ne prosledjuj
 ```
 
 Sustizanje posle kasnog uključenja ili restarta ide samo od sebe: stigne `tip` sa nepoznatim hešom, pa `get_block`. Blok ima nepoznatog roditelja, pa `get_block` za roditelja, i tako unazad do bloka koji imamo. Onda se blokovi na čekanju obrađuju unapred.
+
+Poznat blok je u lancu ili na čekanju i ne traži se ponovo. Heš se skida iz traženih čim blok postane poznat. Na čekanju se čuva do 1024 bloka; pri popunjavanju izbacuje se blok sa najvećom visinom. Traži se do 1024 heša; novi zahtev pri popunjavanju izbacuje najstariji. Duplikat zahteva ne menja njegovu starost. Detalji i provere: [CATCHUP.md](CATCHUP.md).
 
 ## 8. Šta raditi kad stigne transakcija
 

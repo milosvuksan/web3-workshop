@@ -10,6 +10,19 @@ use std::{
 };
 
 pub const MAX_MINING_THREADS: usize = 1024;
+pub const MIN_MINING_DIFFICULTY: u16 = crate::protocol::params::DIFFICULTY as u16;
+pub const MAX_MINING_DIFFICULTY: u16 = 256;
+fn deserialize_difficulty<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<u16, D::Error> {
+    let value = u16::deserialize(deserializer)?;
+    if !(MIN_MINING_DIFFICULTY..=MAX_MINING_DIFFICULTY).contains(&value) {
+        return Err(serde::de::Error::custom(
+            "mining difficulty must be 23–256 leading zero bits",
+        ));
+    }
+    Ok(value)
+}
 pub fn available_threads() -> usize {
     std::thread::available_parallelism().map_or(1, NonZeroUsize::get)
 }
@@ -70,23 +83,98 @@ impl From<MiningThreads> for String {
 pub const DEFAULT_PORT: NonZeroU16 = NonZeroU16::new(7001).unwrap();
 pub const MAX_SAVED_PEERS: usize = 256;
 
+/// Registry of optional wire/consensus adapters. Add future teams here.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompatibilityProfile {
+    #[default]
+    Native,
+    Grupa1Luka,
+}
+impl CompatibilityProfile {
+    pub const ALL: [Self; 2] = [Self::Native, Self::Grupa1Luka];
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Native => "None (native)",
+            Self::Grupa1Luka => "Grupa 1 - Luka",
+        }
+    }
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Grupa1Luka => "grupa1-luka",
+        }
+    }
+    pub fn default_port(self) -> u16 {
+        match self {
+            Self::Native => DEFAULT_PORT.get(),
+            Self::Grupa1Luka => 8080,
+        }
+    }
+}
+impl FromStr for CompatibilityProfile {
+    type Err = Error;
+    fn from_str(value: &str) -> Result<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|p| p.id() == value)
+            .ok_or(Error::Invalid(
+                "unknown compatibility profile (use native or grupa1-luka)",
+            ))
+    }
+}
+pub fn peer_address_for(value: &str, profile: CompatibilityProfile) -> Result<SocketAddr> {
+    let value = value
+        .strip_prefix("http://")
+        .unwrap_or(value)
+        .trim_end_matches('/');
+    if let Ok(ip) = value.parse::<IpAddr>() {
+        return peer_address(&SocketAddr::new(ip, profile.default_port()).to_string());
+    }
+    peer_address(value)
+}
+/// CLI aliases remain free text; the profile option precedes them.
+pub fn configured_peer(address: &str, fields: &[&str]) -> Result<SavedPeer> {
+    configured_peer_with_default(address, fields, CompatibilityProfile::Native)
+}
+pub fn configured_peer_with_default(
+    address: &str,
+    fields: &[&str],
+    default: CompatibilityProfile,
+) -> Result<SavedPeer> {
+    let (profile, alias) = match fields {
+        ["--compat", profile, rest @ ..] => (profile.parse()?, rest),
+        ["--compat"] => return Err(Error::Invalid("--compat requires a profile")),
+        rest => (default, rest),
+    };
+    let mut peer = SavedPeer::new(peer_address_for(address, profile)?, &alias.join(" "))?;
+    peer.compatibility = profile;
+    Ok(peer)
+}
+
 /// A local label and a reachable TCP endpoint, never consensus data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PeerFields")]
 pub struct SavedPeer {
     pub address: SocketAddr,
     pub alias: String,
+    #[serde(default)]
+    pub compatibility: CompatibilityProfile,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PeerFields {
     address: SocketAddr,
     alias: String,
+    #[serde(default)]
+    compatibility: CompatibilityProfile,
 }
 impl TryFrom<PeerFields> for SavedPeer {
     type Error = Error;
     fn try_from(value: PeerFields) -> Result<Self> {
-        Self::new(value.address, &value.alias)
+        let mut peer = Self::new(value.address, &value.alias)?;
+        peer.compatibility = value.compatibility;
+        Ok(peer)
     }
 }
 pub fn peer_address(value: &str) -> Result<SocketAddr> {
@@ -122,6 +210,7 @@ impl SavedPeer {
         }
         Ok(Self {
             address,
+            compatibility: CompatibilityProfile::Native,
             alias: if alias.is_empty() {
                 address.to_string()
             } else {
@@ -134,6 +223,8 @@ impl SavedPeer {
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub mining_threads: MiningThreads,
+    #[serde(deserialize_with = "deserialize_difficulty")]
+    pub mining_difficulty: u16,
     pub port: NonZeroU16,
     pub peers: Vec<SavedPeer>,
 }
@@ -141,6 +232,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             mining_threads: MiningThreads::default(),
+            mining_difficulty: MIN_MINING_DIFFICULTY,
             port: DEFAULT_PORT,
             peers: Vec::new(),
         }
@@ -160,6 +252,11 @@ impl Settings {
     }
     pub fn save(&self, data_dir: &Path) -> Result<()> {
         self.validate_peers()?;
+        if !(MIN_MINING_DIFFICULTY..=MAX_MINING_DIFFICULTY).contains(&self.mining_difficulty) {
+            return Err(Error::Invalid(
+                "mining difficulty must be 23–256 leading zero bits",
+            ));
+        }
         let temporary = data_dir.join("settings.tmp");
         fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
         fs::rename(temporary, data_dir.join("settings.json"))?;
@@ -182,6 +279,56 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compatibility_profiles_migrate_and_roundtrip_for_multiple_peers() {
+        let old: SavedPeer =
+            serde_json::from_str(r#"{"address":"192.0.2.1:7001","alias":"Native"}"#).unwrap();
+        assert_eq!(old.compatibility, CompatibilityProfile::Native);
+        let foreign = configured_peer(
+            "http://192.0.2.2",
+            &["--compat", "grupa1-luka", "Luka", "laptop"],
+        )
+        .unwrap();
+        assert_eq!(foreign.address.port(), 8080);
+        assert_eq!(foreign.alias, "Luka laptop");
+        assert_eq!(
+            configured_peer("[::1]:9000", &["--compat", "grupa1-luka"])
+                .unwrap()
+                .address
+                .port(),
+            9000
+        );
+        assert!(configured_peer("192.0.2.1", &["--compat", "unknown"]).is_err());
+        let settings = Settings {
+            peers: vec![old, foreign],
+            ..Settings::default()
+        };
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(restored.peers, settings.peers);
+    }
+    #[test]
+    fn difficulty_defaults_migrate_and_validate() {
+        let old: Settings = serde_json::from_str(r#"{"mining_threads":"all"}"#).unwrap();
+        assert_eq!(old.mining_difficulty, 23);
+        for value in [23, 24, 256] {
+            let settings: Settings =
+                serde_json::from_str(&format!(r#"{{"mining_difficulty":{value}}}"#)).unwrap();
+            assert_eq!(settings.mining_difficulty, value);
+            assert_eq!(
+                serde_json::from_str::<Settings>(&serde_json::to_string(&settings).unwrap())
+                    .unwrap()
+                    .mining_difficulty,
+                value
+            );
+        }
+        for value in [0, 22, 257] {
+            assert!(
+                serde_json::from_str::<Settings>(&format!(r#"{{"mining_difficulty":{value}}}"#))
+                    .is_err()
+            );
+        }
+    }
     #[test]
     fn port_defaults_migrate_old_settings_and_validate_boundaries() {
         assert_eq!(Settings::default().port.get(), 7001);

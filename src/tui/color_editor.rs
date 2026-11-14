@@ -93,12 +93,7 @@ impl ColorEditor {
         let screen = frame.area();
         let width = screen.width.saturating_sub(2).min(70);
         let height = screen.height.saturating_sub(2).min(23);
-        let area = Rect::new(
-            screen.x + (screen.width - width) / 2,
-            screen.y + (screen.height - height) / 2,
-            width,
-            height,
-        );
+        let area = centered(screen, width, height);
         frame.render_widget(Clear, area);
         let block =
             panel("Edit parcel color • Esc cancels").border_style(Style::default().fg(ACCENT));
@@ -119,8 +114,8 @@ impl ColorEditor {
                 Line::from(format!(
                     "Parcel {} ({}, {}) • current #{}",
                     self.parcel,
-                    self.parcel % 64,
-                    self.parcel / 64,
+                    self.parcel % WIDTH,
+                    self.parcel / WIDTH,
                     current
                 )),
                 Line::from(vec![

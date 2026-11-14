@@ -1,4 +1,4 @@
-use crate::protocol::{Block, Bytes, validation::valid_pow};
+use crate::protocol::{Block, Bytes};
 use sha2::{Digest, Sha256};
 use std::{
     io,
@@ -12,9 +12,21 @@ use std::{
 /// Single-worker entry point retained for reproducible benchmarks.
 pub fn mine(block: Block, cancel: &AtomicBool) -> Option<Block> {
     let start = block.nonce;
-    mine_lane(block, cancel, start, 1)
+    mine_lane(
+        block,
+        cancel,
+        start,
+        1,
+        crate::protocol::params::DIFFICULTY as u16,
+    )
 }
-fn mine_lane(mut block: Block, cancel: &AtomicBool, start: u64, stride: u64) -> Option<Block> {
+fn mine_lane(
+    mut block: Block,
+    cancel: &AtomicBool,
+    start: u64,
+    stride: u64,
+    difficulty: u16,
+) -> Option<Block> {
     let mut bytes = block.canonical_bytes();
     bytes.truncate(bytes.len() - 8);
     let prefix = Sha256::new().chain_update(bytes);
@@ -32,12 +44,19 @@ fn mine_lane(mut block: Block, cancel: &AtomicBool, start: u64, stride: u64) -> 
                 .finalize()
                 .into(),
         );
-        if valid_pow(hash) {
+        if meets_difficulty(hash, difficulty) {
             return Some(block);
         }
         block.nonce = block.nonce.checked_add(stride)?;
         iterations = iterations.wrapping_add(1);
     }
+}
+
+fn meets_difficulty(hash: Bytes<32>, bits: u16) -> bool {
+    let whole = usize::from(bits / 8);
+    let remainder = bits % 8;
+    hash.0[..whole].iter().all(|byte| *byte == 0)
+        && (remainder == 0 || hash.0[whole] >> (8 - remainder) == 0)
 }
 
 /// Workers search disjoint nonce lanes. The first result stops the whole group.
@@ -47,6 +66,28 @@ pub fn start(
     threads: usize,
     found: impl Fn(Block) + Send + Sync + 'static,
 ) -> io::Result<Job> {
+    start_with_difficulty(
+        block,
+        threads,
+        crate::protocol::params::DIFFICULTY as u16,
+        found,
+    )
+}
+
+pub fn start_with_difficulty(
+    block: Block,
+    threads: usize,
+    difficulty: u16,
+    found: impl Fn(Block) + Send + Sync + 'static,
+) -> io::Result<Job> {
+    if !(crate::settings::MIN_MINING_DIFFICULTY..=crate::settings::MAX_MINING_DIFFICULTY)
+        .contains(&difficulty)
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid mining difficulty",
+        ));
+    }
     if threads == 0 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -70,7 +111,7 @@ pub fn start(
                 let Some(start) = block.nonce.checked_add(lane as u64) else {
                     return;
                 };
-                if let Some(block) = mine_lane(block, &cancel, start, stride)
+                if let Some(block) = mine_lane(block, &cancel, start, stride, difficulty)
                     && cancel
                         .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                         .is_ok()
@@ -111,6 +152,20 @@ impl Drop for Job {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::validation::valid_pow;
+    #[test]
+    fn local_target_is_stricter_than_network_and_handles_bit_boundaries() {
+        let mut hash = Bytes([0; 32]);
+        hash.0[2] = 1;
+        assert!(valid_pow(hash));
+        assert!(meets_difficulty(hash, 23));
+        assert!(!meets_difficulty(hash, 24));
+        hash.0[2] = 0;
+        assert!(meets_difficulty(hash, 256));
+        hash.0[31] = 1;
+        assert!(meets_difficulty(hash, 255));
+        assert!(!meets_difficulty(hash, 256));
+    }
     #[test]
     fn every_lane_observes_cancellation_even_at_unaligned_nonces() {
         let cancelled = AtomicBool::new(true);
@@ -121,7 +176,8 @@ mod tests {
                         crate::protocol::params::genesis(),
                         &cancelled,
                         lane + 1,
-                        stride
+                        stride,
+                        crate::settings::MIN_MINING_DIFFICULTY
                     )
                     .is_none()
                 );

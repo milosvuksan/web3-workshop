@@ -10,10 +10,12 @@ use std::path::PathBuf;
 #[command(version, about = "Pixel Chain workshop prototype")]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 #[derive(Subcommand)]
 pub enum Command {
+    /// Open the live terminal dashboard (also the default without a subcommand).
+    Tui(Config),
     /// Start a node. Interactive commands are read from stdin.
     Node(Config),
     /// Create or reload a persistent Ed25519 identity; print only its public key.
@@ -48,7 +50,7 @@ pub fn transaction(line: &str, counter: u64) -> Result<Transaction> {
         .ok_or(crate::Error::Invalid("missing color/recipient"))?;
     let action = match args.first().copied() {
         Some("paint") => Action::Paint {
-            color: payload.parse()?,
+            color: crate::colors::parse(payload)?,
         },
         Some("transfer") => Action::Transfer {
             recipient: payload.parse()?,
@@ -73,4 +75,4 @@ pub fn key(file: PathBuf) -> Result<()> {
     );
     Ok(())
 }
-pub const HELP: &str = "status | identity | paint PARCEL RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | export [PATH.ppm] | quit";
+pub const HELP: &str = "status | identity | owned | paint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | threads COUNT|all | network on|off | export [PATH.ppm] | quit";

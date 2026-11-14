@@ -17,4 +17,26 @@ pub struct Config {
     pub lag_seed: u64,
     #[arg(long)]
     pub mine: bool,
+    /// Start with no listener, connections, gossip, or peer synchronization.
+    #[arg(long)]
+    pub offline: bool,
+    /// CPU mining workers: a count (1..1024) or 'all'. Overrides saved settings.
+    #[arg(long)]
+    pub threads: Option<crate::settings::MiningThreads>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            listen: "127.0.0.1:7001".parse().expect("default address"),
+            peers: Vec::new(),
+            data_dir: "data/node".into(),
+            key: None,
+            no_lag: false,
+            lag_seed: 1,
+            mine: false,
+            offline: false,
+            threads: None,
+        }
+    }
 }

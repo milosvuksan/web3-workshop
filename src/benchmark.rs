@@ -237,16 +237,16 @@ mod tests {
         assert!(Cli::try_parse_from(["pixel", "benchmark-mining", "--samples", "0"]).is_err());
         assert!(matches!(
             Cli::try_parse_from(["pixel", "benchmark"]).unwrap().command,
-            Command::Benchmark { hashes: 2_000_000 }
+            Some(Command::Benchmark { hashes: 2_000_000 })
         ));
         assert!(matches!(
             Cli::try_parse_from(["pixel", "benchmark-mining", "--json"])
                 .unwrap()
                 .command,
-            Command::BenchmarkMining {
+            Some(Command::BenchmarkMining {
                 samples: 30,
                 json: true
-            }
+            })
         ));
     }
 
@@ -254,7 +254,8 @@ mod tests {
     fn node_defaults_match_documented_simulation_configuration() {
         use baneworkshop::cli::{Cli, Command};
         use clap::Parser;
-        let Command::Node(config) = Cli::try_parse_from(["pixel", "node"]).unwrap().command else {
+        let Some(Command::Node(config)) = Cli::try_parse_from(["pixel", "node"]).unwrap().command
+        else {
             panic!("expected node command");
         };
         assert_eq!(config.listen.to_string(), "127.0.0.1:7001");
@@ -264,7 +265,7 @@ mod tests {
         assert!(!config.no_lag);
         assert_eq!(config.lag_seed, 1);
         assert!(!config.mine);
-        let Command::Node(config) = Cli::try_parse_from([
+        let Some(Command::Node(config)) = Cli::try_parse_from([
             "pixel",
             "node",
             "--lag-seed",

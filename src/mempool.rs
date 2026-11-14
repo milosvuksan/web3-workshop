@@ -1,15 +1,36 @@
 use crate::{
     Error, Result,
-    protocol::{Transaction, params::MAX_TRANSACTIONS},
+    protocol::{Action, Color, Hash, PublicKey, Transaction, params::MAX_TRANSACTIONS},
     state::State,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingPaint {
+    pub color: Color,
+    pub transaction: Hash,
+}
 pub const MAX_PENDING: usize = 4096;
 #[derive(Default)]
 pub struct Mempool {
     pub transactions: Vec<Transaction>,
 }
 impl Mempool {
+    /// The latest admitted local edit per parcel; does not alter confirmed state.
+    pub fn pending_paints(&self, identity: PublicKey) -> BTreeMap<usize, PendingPaint> {
+        self.transactions
+            .iter()
+            .filter_map(|tx| match tx.action {
+                Action::Paint { color } if tx.sender == identity => Some((
+                    usize::from(tx.parcel),
+                    PendingPaint {
+                        color,
+                        transaction: tx.id(),
+                    },
+                )),
+                _ => None,
+            })
+            .collect()
+    }
     pub fn projected(&self, state: &State) -> State {
         let mut projected = state.clone();
         for tx in &self.transactions {
@@ -58,5 +79,49 @@ impl Mempool {
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{chain::Chain, cli, crypto, protocol::Block};
+    #[test]
+    fn repeated_paint_previews_follow_latest_edit_and_clear_on_confirmation() {
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let mut chain = Chain::default();
+        for name in ["one", "two", "three"] {
+            let block: Block = serde_json::from_value(vectors[name]["block"].clone()).unwrap();
+            chain.insert(block, 1_700_000_100).unwrap();
+        }
+        let key = ed25519_dalek::SigningKey::from_bytes(&[2; 32]);
+        let identity = crypto::public_key(&key);
+        let state = &chain.head().state;
+        let mut pool = Mempool::default();
+        for (counter, color) in [(3, "red"), (4, "#123ABC")] {
+            let mut tx = cli::transaction(&format!("paint 181 {color}"), counter).unwrap();
+            crypto::sign(&mut tx, &key);
+            pool.admit(tx, state).unwrap();
+        }
+        assert_eq!(
+            pool.pending_paints(identity)[&181].color,
+            crate::colors::parse("123abc").unwrap()
+        );
+        assert!(
+            pool.pending_paints(crate::protocol::Bytes([9; 32]))
+                .is_empty()
+        );
+        assert_eq!(
+            state.parcels[181].color,
+            crate::colors::parse("blue").unwrap()
+        );
+        let confirmed = pool.projected(state);
+        pool.reconcile(&confirmed, Vec::new());
+        assert!(pool.pending_paints(identity).is_empty());
+        assert_eq!(
+            confirmed.parcels[181].color,
+            crate::colors::parse("123abc").unwrap()
+        );
     }
 }

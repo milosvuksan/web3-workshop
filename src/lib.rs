@@ -1,14 +1,19 @@
 pub mod chain;
 pub mod cli;
+pub mod colors;
 pub mod config;
 pub mod crypto;
+pub mod diagnostics;
 pub mod mempool;
 pub mod mining;
 pub mod network;
 pub mod node;
+pub mod ownership;
 pub mod protocol;
 pub mod render;
+pub mod settings;
 pub mod state;
+pub mod tui;
 
 pub type Result<T> = std::result::Result<T, Error>;
 

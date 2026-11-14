@@ -10,7 +10,7 @@ use std::{net::SocketAddr, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::{Semaphore, mpsc, oneshot},
+    sync::{Semaphore, mpsc, oneshot, watch},
     task::{JoinHandle, JoinSet},
     time::timeout,
 };
@@ -100,6 +100,16 @@ async fn connection(
 /// Own every network task so returning from the coordinator closes its sockets.
 pub struct Network {
     tasks: Vec<JoinHandle<()>>,
+    stop: watch::Sender<bool>,
+}
+impl Network {
+    /// Wait until every listener, reconnect loop, and transport has closed.
+    pub async fn shutdown(mut self) {
+        let _ = self.stop.send(true);
+        for task in self.tasks.drain(..) {
+            let _ = task.await;
+        }
+    }
 }
 impl Drop for Network {
     fn drop(&mut self) {
@@ -116,6 +126,7 @@ pub async fn start(
     seed: u64,
 ) -> crate::Result<Network> {
     let listener = TcpListener::bind(listen).await?;
+    let (stop, mut stopped) = watch::channel(false);
     let incoming_events = events.clone();
     let slots = Arc::new(Semaphore::new(128));
     let mut tasks = Vec::new();
@@ -123,6 +134,8 @@ pub async fn start(
         let mut incoming = JoinSet::new();
         loop {
             let stream = tokio::select! {
+                biased;
+                _ = stopped.changed() => break,
                 result = listener.accept() => match result {
                     Ok((stream, _)) => stream,
                     Err(_) => break,
@@ -138,23 +151,32 @@ pub async fn start(
                 connection(stream, events, enabled, seed).await;
             });
         }
+        incoming.shutdown().await;
     }));
     let peers: std::collections::BTreeSet<_> =
         peers.into_iter().filter(|peer| *peer != listen).collect();
     for peer in peers {
         let events = events.clone();
+        let mut stopped = stop.subscribe();
         tasks.push(tokio::spawn(async move {
             loop {
-                if let Ok(Ok(stream)) =
-                    timeout(Duration::from_secs(5), TcpStream::connect(peer)).await
-                {
-                    connection(stream, events.clone(), enabled, seed).await;
+                let session = async {
+                    if let Ok(Ok(stream)) =
+                        timeout(Duration::from_secs(5), TcpStream::connect(peer)).await
+                    {
+                        connection(stream, events.clone(), enabled, seed).await;
+                    }
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                };
+                tokio::select! {
+                    biased;
+                    _ = stopped.changed() => break,
+                    _ = session => {},
                 }
-                tokio::time::sleep(Duration::from_secs(2)).await;
             }
         }));
     }
-    Ok(Network { tasks })
+    Ok(Network { tasks, stop })
 }
 
 #[cfg(test)]

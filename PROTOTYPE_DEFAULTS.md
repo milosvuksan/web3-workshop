@@ -107,7 +107,13 @@ New valid blocks, including side branches, and newly admitted transactions forwa
 | Chain storage | Memory only; restarts download from surviving peers; JSON/PPM exports are diagnostics and are never trusted as recovery input |
 | Diagnostics | Atomically replaced `status.json`, deterministic `state.json`, and 64×32 binary P6 `canvas.ppm`, refreshed every 2 seconds and after local commands |
 | Diagnostic state hash | SHA-256 of row-major parcels: owner-present `u8`, owner bytes (zero when absent), RGB 3 bytes, next counter `u64` big-endian; not a consensus field |
-| Mining | Off until `--mine` or `mining on`; one dedicated CPU worker; fixed 23-bit target, no reduced-difficulty CLI mode |
+| Terminal interface | Default command opens the Rust Ratatui/Crossterm dashboard; `node` retains the scriptable stdin interface |
+| Networking control | Online by default; `--offline` starts without sockets; `network off` closes and joins listener/session/reconnect tasks; `network on` resumes peer synchronization independently of mining |
+| Debug/test interface | Live status, peer sessions, chain/mempool/sync inspection, append-only node log, and background diagnostics with retained output; Unix cancellation kills the diagnostic process group |
+| Ownership history | Non-consensus metadata derived from the canonical chain; latest acquisition block timestamp (UTC), mining/transfer source and sender; rebuilt on reorg/recovery; paint and self-transfer preserve the acquisition date |
+| Color input | TUI color picker offers explicit named-color autocomplete, preview, and RGB hex input; admitted local edits show labeled pending previews inside parcel outlines and the Owned list until block confirmation; rejected edits remain open; CLI accepts names too; strict wire RGB encoding remains unchanged |
+| Mining | Off until `--mine` or `mining on`; one CPU worker by default, configurable via Settings or `threads COUNT|all`; disjoint nonce lanes, shared cancellation, all workers joined on stop; fixed 23-bit target, no reduced-difficulty CLI mode |
+| Mining settings | Exact count (1–1024) or all available logical CPUs; saved per data directory in `settings.json`; `--threads COUNT|all` overrides the preference for that run; changing the count preserves mining/network on/off states |
 | Cancellation | Check at most every 16,384 hashes; new tip or changed mempool replaces the candidate; queued successful results survive periodic maintenance; stale results fail generation/parent checks and accepted results undergo full validation |
 | Mempool | 4096 entries; arrival order, state-aware admission/selection, 256 selected per block; local commands reserve pending counters |
 | Unknown/future blocks | At most 1024 pending blocks and 1024 wanted hashes, in memory; on overflow prefer lower-height ancestors, and rediscover evicted descendants from missing-parent/tip exchange |

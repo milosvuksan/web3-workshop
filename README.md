@@ -2,6 +2,8 @@
 
 Implementation of `IMPLEMENTATION_PLAN.md` on branch `milos`. The supplied group `SPEC.md` is unchanged; all decisions filling its blanks are recorded in [PROTOTYPE_DEFAULTS.md](PROTOTYPE_DEFAULTS.md) for team review.
 
+Progress against all original milestones and stretch goals is tracked in [MILESTONE_STATUS.md](MILESTONE_STATUS.md). The current canvas interface is CLI plus PPM image export; there is no browser UI or HTTP endpoint.
+
 The node implements Ed25519 identities, fixed 23-bit PoW, ownership/painting/transfers, parcel replay counters, atomic validation, fork resolution, a mempool, full-mesh TCP gossip, lag/loss, missing-ancestor retries, late join, and recovery from surviving peers after a crash. Canvas output is a 64×32 PPM image. There is no durable chain storage.
 
 ## Build and check

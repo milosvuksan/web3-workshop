@@ -234,3 +234,47 @@ fn a_new_reward_cannot_be_spent_in_its_block() {
     assert!(s.apply(&transaction("paint")).is_err());
     assert_eq!(s, State::default());
 }
+
+#[test]
+fn self_transfer_and_transfer_back_preserve_replay_history() {
+    // SPEC section 3: self-transfer increments the parcel counter, which must
+    // survive a round trip through another owner so old signatures stay spent.
+    let mut chain = Chain::default();
+    chain.insert(block("one"), NOW).unwrap();
+    let mut state = chain.head().state.clone();
+    let v = vectors();
+    let a_seed: Bytes<32> = serde_json::from_value(v["a_seed"].clone()).unwrap();
+    let b_seed: Bytes<32> = serde_json::from_value(v["b_seed"].clone()).unwrap();
+    let a = SigningKey::from_bytes(&a_seed.0);
+    let b = SigningKey::from_bytes(&b_seed.0);
+    let mut tx = transaction("paint");
+    let parcel = usize::from(tx.parcel);
+    let initial_color = state.parcels[parcel].color;
+    tx.action = Action::Transfer {
+        recipient: crypto::public_key(&a),
+    };
+    crypto::sign(&mut tx, &a);
+    let old_self_transfer = tx.clone();
+    state.apply(&tx).unwrap();
+    assert_eq!(state.parcels[parcel].owner, Some(crypto::public_key(&a)));
+    assert_eq!(state.parcels[parcel].counter, 1);
+
+    tx.counter = 1;
+    tx.action = Action::Transfer {
+        recipient: crypto::public_key(&b),
+    };
+    crypto::sign(&mut tx, &a);
+    state.apply(&tx).unwrap();
+    tx.counter = 2;
+    tx.action = Action::Transfer {
+        recipient: crypto::public_key(&a),
+    };
+    crypto::sign(&mut tx, &b);
+    state.apply(&tx).unwrap();
+    assert_eq!(state.parcels[parcel].owner, Some(crypto::public_key(&a)));
+    assert_eq!(state.parcels[parcel].counter, 3);
+    assert_eq!(state.parcels[parcel].color, initial_color);
+    let before = state.clone();
+    assert!(state.apply(&old_self_transfer).is_err());
+    assert_eq!(state, before);
+}

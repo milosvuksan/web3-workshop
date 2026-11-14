@@ -1,6 +1,8 @@
 # Prototype defaults for team review
 
-These choices fill the blanks in `SPEC.md` under the implementation request's authorization to choose working defaults. They are **provisional**, not group approval. The supplied `SPEC.md` is preserved byte for byte. Other language implementations must agree on these choices and verify the fixtures before joining this prototype chain. Changes to consensus choices require a new chain identity and regenerated vectors.
+These choices originally filled the protocol blanks under the implementation request's authorization to choose working defaults. The updated [SPEC.md](SPEC.md), imported in commit `16b4686`, now includes those consensus and wire definitions and is the authoritative implementation contract. This document retains the original rationale and additional local operational details; it does not override `SPEC.md`. See [SPEC_ALIGNMENT.md](SPEC_ALIGNMENT.md) for the comparison and verification.
+
+The published specification still labels sections 2–11 provisional and retains group verification checkboxes. Those labels are preserved as written; they do not require different prototype behavior. Other implementations must verify the shared fixtures before interoperability is established. A future consensus change requires a new chain identity and regenerated vectors.
 
 The accepted Ed25519, SHA-256, lowercase hex, 64×32 canvas, TCP full mesh, 23-bit difficulty, multiplication-based parcel retry, one reward per block, fork tie-break, and default-on lag are unchanged.
 
@@ -125,4 +127,4 @@ The node is a workshop prototype: valid chain history and its state snapshots re
 
 `tests/conformance.rs` verifies fixture bytes/hashes/signatures and RFC 8032 / SHA-256 standard vectors. `scripts/verify-vectors.py` independently implements the binary encodings in Python, checks hashes/PoW/rewards, and verifies keys/signatures through OpenSSL. This is useful independent verification, **not** validation against another team's network implementation.
 
-Team decisions still needed: accept or replace each provisional consensus/wire choice above; verify the published vectors in the other languages; run the LAN/full-team and mentor scenarios. Cross-language workshop milestones are not claimed complete by local Rust tests.
+The current consensus/wire definitions are published in `SPEC.md`. Its remaining checklist covers group confirmation, fixture verification in the other languages, speed measurements, and the LAN/mentor scenarios. Cross-language workshop milestones are not claimed complete by local Rust tests.

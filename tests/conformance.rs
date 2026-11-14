@@ -97,3 +97,33 @@ fn malformed_text_and_fields_rejected() {
     tx["action"]["color"] = Value::String("01020304".into());
     assert!(serde_json::from_value::<Transaction>(tx).is_err());
 }
+
+#[test]
+fn json_preserves_full_width_unsigned_integers() {
+    // SPEC sections 2/9 require all 64 bits to survive wire decoding. Use values
+    // above the exact-integer range of IEEE-754 doubles, including u64::MAX.
+    let v = vectors();
+    let mut block: Block = serde_json::from_value(v["two"]["block"].clone()).unwrap();
+    block.height = (1_u64 << 53) + 1;
+    block.timestamp = u64::MAX - 1;
+    block.nonce = u64::MAX;
+    block.transactions[0].counter = (1_u64 << 63) + 1;
+    let message = baneworkshop::network::wire::Message::Block {
+        block: block.clone(),
+    };
+    let mut line = serde_json::to_vec(&message).unwrap();
+    line.push(b'\n');
+    let decoded = baneworkshop::network::wire::Framer::default()
+        .push(&line)
+        .unwrap();
+    let [baneworkshop::network::wire::Message::Block { block: decoded }] = decoded.as_slice()
+    else {
+        panic!("expected one complete block message");
+    };
+    assert_eq!(decoded, &block);
+    assert_eq!(decoded.canonical_bytes(), block.canonical_bytes());
+    assert_eq!(
+        decoded.transactions[0].signing_bytes(),
+        block.transactions[0].signing_bytes()
+    );
+}

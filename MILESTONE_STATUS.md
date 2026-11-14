@@ -1,6 +1,6 @@
 # Milestone and stretch-goal status
 
-Status as of **2026-11-14**, following the implementation and Sol Medium audit on branch `milos`. Source checklist: [original_requirements.md](original_requirements.md). Evidence: [AUDIT_REPORT.md](AUDIT_REPORT.md), [VALIDATION.md](VALIDATION.md), the Rust tests, and the executable demonstration/fault scripts.
+Status as of **2026-11-14**, following the implementation, Sol Medium audit, and alignment with updated `SPEC.md` at commit `16b4686` on branch `milos`. Source checklist: [original_requirements.md](original_requirements.md). Evidence: [AUDIT_REPORT.md](AUDIT_REPORT.md), [VALIDATION.md](VALIDATION.md), the Rust tests, and the executable demonstration/fault scripts.
 
 This report covers the Rust prototype in this repository. No evidence has been supplied that the other team members' independently implemented nodes have passed these checks. A local run of three copies of the Rust executable establishes local behavior; it does not complete a milestone requiring different people's implementations, the whole group, or the mentor. The original requirements also say a stretch goal counts only when **every node in the group** has it.
 
@@ -20,14 +20,14 @@ A web UI is **not implemented**. It is also not required by the original canvas-
 | # | Original milestone | Completed? | Evidence and remaining work |
 | --- | --- | --- | --- |
 | 0 | Alati / Tools | **Yes — for the Rust node** | Persistent Ed25519 keys, signing/verification, SHA-256, RFC 8032 and SHA-256 standard vectors, and independent Python/OpenSSL checks pass. Each other participant must establish the same for their language. |
-| 1 | Grupna specifikacija / Group specification | **No — provisional completion only** | `SPEC.md` is preserved and still contains unresolved fields. [PROTOTYPE_DEFAULTS.md](PROTOTYPE_DEFAULTS.md) supplies explicit defaults and exact encodings; fixtures include keys, transactions, genesis, PoW-valid blocks, and parcel outcomes. These defaults were chosen for the working prototype under the implementation request. They are not a group-authored/approved specification. The group must resolve/approve the shared specification and verify the vectors in its own implementations. |
-| 2 | Samostalni čvor / Standalone node | **Yes — for the Rust prototype** | The node passes its provisional protocol fixtures, mines at the real 23-bit target, assigns parcels, validates state transitions/replay, and exports the canvas. Painting and transfers work. Shared-vector approval under milestone 1 remains outstanding for workshop interoperability. |
+| 1 | Grupna specifikacija / Group specification | **Yes — written protocol and fixtures complete** | Updated `SPEC.md` now defines the cryptography, exact transaction/block bytes, genesis, replay/state rules, validation, fork choice, wire protocol, recovery, lag, and shared fixtures. The prototype matches these rules; see [SPEC_ALIGNMENT.md](SPEC_ALIGNMENT.md). The file still carries its provisional status banner and group confirmation/verification checkboxes. Verification by every language implementation remains outstanding; this status records completion of the written protocol and fixtures, not cross-language acceptance. |
+| 2 | Samostalni čvor / Standalone node | **Yes — for the Rust prototype** | The node passes the fixtures referenced by the updated specification, mines at the real 23-bit target, assigns parcels, validates state transitions/replay, and exports the canvas. Painting and transfers work. Shared-vector verification in the other implementations remains outstanding for workshop interoperability. |
 | 3 | Prvi kontakt / First contact | **No — Rust-to-Rust equivalent passes** | Local nodes exchange transactions and blocks with delay/loss and converge on ownership, colors, counters, and tip. The original milestone requires two different people's implementations; that test has not been demonstrated. Connect to a teammate's implementation after agreeing on the specification/vectors. |
 | 4 | Cela mreža / Whole network | **No — local mesh equivalent passes** | A three-process Rust full mesh passes concurrent mining, fork convergence, and late join with lag enabled. A full-group mesh of the independently implemented nodes, including their late join/fork behavior, has not been demonstrated. |
 | 5 | Padovi / Crashes | **No — local crash/restart equivalent passes** | The demo kills one Rust process using SIGKILL, verifies continued work by survivors, restarts with the same seed, and downloads/validates the chain again. Fault tests also cover a disappearing source during catch-up. Repeat the scenario across the full group and for each implementation before marking the group milestone complete. |
 | 6 | Završni test / Final test | **No — mentor acceptance pending** | The automated local Rust scenario passes all five behavioral steps below. There is no evidence of the complete team scenario being observed and accepted by the mentor. |
 
-**Summary:** milestones **0 and 2 are complete for this Rust prototype**. Milestone **1 needs group agreement**. Milestones **3–5 have passing local Rust equivalents but still need the required team/interoperability demonstrations**. Milestone **6 needs the mentor-observed final test**.
+**Summary:** milestones **0 and 2 are complete for this Rust prototype**, and milestone **1 now has a complete written protocol and fixtures**. The specification still contains its group confirmation/verification checklist. Milestones **3–5 have passing local Rust equivalents but still need the required team/interoperability demonstrations**. Milestone **6 needs the mentor-observed final test**.
 
 ## Original final-test scenario
 
@@ -78,7 +78,7 @@ The original document separately lists nine mandatory capabilities. All nine are
 
 ## Work needed for workshop completion
 
-1. Agree on the shared specification and exact vectors; replace provisional defaults where the group chooses differently.
+1. Complete the remaining confirmation/verification checklist in the now-written shared specification; any future change must update the implementation and vectors together.
 2. Verify those vectors in every language and connect two independently implemented nodes with lag enabled.
 3. Run the complete group mesh, fork/late-join scenario, and crash/restart checks for each participant's implementation.
 4. Perform the final five-step scenario while the mentor observes.

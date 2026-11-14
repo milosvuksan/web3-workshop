@@ -1,6 +1,6 @@
 # Pixel Chain — Rust prototype
 
-Implementation of `IMPLEMENTATION_PLAN.md` on branch `milos`. The supplied group `SPEC.md` is unchanged; all decisions filling its blanks are recorded in [PROTOTYPE_DEFAULTS.md](PROTOTYPE_DEFAULTS.md) for team review.
+Implementation of `IMPLEMENTATION_PLAN.md` on branch `milos`. The current [SPEC.md](SPEC.md) defines the protocol, including the original prototype decisions. [PROTOTYPE_DEFAULTS.md](PROTOTYPE_DEFAULTS.md) retains the rationale and local operational details. The [spec alignment review](SPEC_ALIGNMENT.md) confirms that the published rules match the implementation.
 
 Progress against all original milestones and stretch goals is tracked in [MILESTONE_STATUS.md](MILESTONE_STATUS.md). The current canvas interface is CLI plus PPM image export; there is no browser UI or HTTP endpoint.
 

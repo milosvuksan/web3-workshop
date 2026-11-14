@@ -1,6 +1,7 @@
-benchmarks/
-
-
-# Added by cargo
-
 /target
+/.cargo-home
+/data
+/demo-data
+*.ppm
+*.seed
+/benchmarks

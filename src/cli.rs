@@ -1,0 +1,67 @@
+use crate::{
+    Result,
+    config::Config,
+    crypto,
+    protocol::{Action, Bytes, Transaction},
+};
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+#[derive(Parser)]
+#[command(version, about = "Pixel Chain workshop prototype")]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+#[derive(Subcommand)]
+pub enum Command {
+    /// Start a node. Interactive commands are read from stdin.
+    Node(Config),
+    /// Create or reload a persistent Ed25519 identity; print only its public key.
+    Key {
+        #[arg(long, default_value = "data/node/identity.seed")]
+        file: PathBuf,
+    },
+    /// Measure actual header hashing at the fixed 23-bit target.
+    Benchmark {
+        #[arg(long, default_value_t = 2_000_000)]
+        hashes: u64,
+    },
+}
+pub fn transaction(line: &str, counter: u64) -> Result<Transaction> {
+    let args: Vec<_> = line.split_whitespace().collect();
+    let parcel = args
+        .get(1)
+        .ok_or(crate::Error::Invalid("missing parcel"))?
+        .parse()
+        .map_err(|_| crate::Error::Invalid("invalid parcel"))?;
+    let payload = args
+        .get(2)
+        .ok_or(crate::Error::Invalid("missing color/recipient"))?;
+    let action = match args.first().copied() {
+        Some("paint") => Action::Paint {
+            color: payload.parse()?,
+        },
+        Some("transfer") => Action::Transfer {
+            recipient: payload.parse()?,
+        },
+        _ => return Err(crate::Error::Invalid("unknown transaction command")),
+    };
+    if args.len() != 3 {
+        return Err(crate::Error::Invalid("expected command parcel payload"));
+    }
+    Ok(Transaction {
+        parcel,
+        counter,
+        sender: Bytes::default(),
+        action,
+        signature: Bytes::default(),
+    })
+}
+pub fn key(file: PathBuf) -> Result<()> {
+    println!(
+        "{}",
+        crypto::public_key(&crypto::load_or_create_key(&file)?)
+    );
+    Ok(())
+}
+pub const HELP: &str = "status | identity | paint PARCEL RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | export [PATH.ppm] | quit";

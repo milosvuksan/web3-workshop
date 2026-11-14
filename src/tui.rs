@@ -1,6 +1,7 @@
 //! Live terminal dashboard. The coordinator remains the only owner of node state.
 mod canvas;
 mod color_editor;
+mod network;
 mod owned;
 mod settings;
 use crate::{
@@ -39,6 +40,7 @@ const PAGES: &[&str] = &[
     "6 Help",
     "7 Owned",
     "8 Settings",
+    "9 Network",
 ];
 const DEBUG: &[&str] = &[
     "Status",
@@ -55,7 +57,7 @@ const CONTROLS: &[&str] = &[
     "Paint selected parcel",
     "Transfer selected parcel",
     "Owned parcels and colors",
-    "Settings (mining threads)",
+    "Settings (threads and TCP port)",
     "Quit program",
 ];
 const ACCENT: Color = Color::Cyan;
@@ -76,6 +78,15 @@ impl View<'_> {
             .map_or(self.state.parcels[id].color, |paint| paint.color)
     }
 }
+pub struct Input<'a> {
+    pub mining: bool,
+    pub online: bool,
+    pub data_dir: &'a Path,
+    pub owned: &'a BTreeMap<usize, Acquisition>,
+    pub threads: MiningThreads,
+    pub port: u16,
+    pub saved_peers: &'a [crate::settings::SavedPeer],
+}
 pub struct App {
     terminal: DefaultTerminal,
     pub runner: Runner,
@@ -89,6 +100,8 @@ pub struct App {
     control: usize,
     settings_selection: usize,
     thread_draft: usize,
+    port_draft: u16,
+    network: network::NetworkPage,
     command: Option<String>,
     ownership: bool,
     scroll: u16,
@@ -122,6 +135,8 @@ impl App {
             control: 0,
             settings_selection: 1,
             thread_draft: 1,
+            port_draft: 7001,
+            network: network::NetworkPage::default(),
             command: None,
             ownership: false,
             scroll: 0,
@@ -129,14 +144,16 @@ impl App {
             last_paint: None,
         })
     }
-    pub fn input(
-        &mut self,
-        mining: bool,
-        online: bool,
-        data_dir: &Path,
-        owned: &BTreeMap<usize, Acquisition>,
-        threads: MiningThreads,
-    ) -> Result<Option<String>> {
+    pub fn input(&mut self, context: Input<'_>) -> Result<Option<String>> {
+        let Input {
+            mining,
+            online,
+            data_dir,
+            owned,
+            threads,
+            port,
+            saved_peers,
+        } = context;
         self.owned_selection = owned_selection(owned, self.owned_selection);
         // Bound event work per frame so input floods cannot starve networking.
         for _ in 0..32 {
@@ -167,6 +184,12 @@ impl App {
                 }
                 continue;
             }
+            if self.page == 8 && self.command.is_none() && self.network.handles(key) {
+                if let Some(command) = self.network.input(key, saved_peers) {
+                    return Ok(Some(command));
+                }
+                continue;
+            }
             if let Some(command) = &mut self.command {
                 match key.code {
                     KeyCode::Esc => self.command = None,
@@ -189,7 +212,11 @@ impl App {
                 continue;
             }
             match key.code {
-                KeyCode::Char('8' | 's') => self.open_settings(threads),
+                KeyCode::Char('9') => {
+                    self.page = 8;
+                    self.reset_scroll();
+                }
+                KeyCode::Char('8' | 's') => self.open_settings(threads, port),
                 KeyCode::Char('q') => return Ok(Some("quit".into())),
                 KeyCode::Char(':') => self.command = Some(String::new()),
                 KeyCode::Char('m') => {
@@ -235,14 +262,14 @@ impl App {
                 KeyCode::Tab => {
                     self.page = (self.page + 1) % PAGES.len();
                     if self.page == 7 {
-                        self.open_settings(threads);
+                        self.open_settings(threads, port);
                     }
                     self.reset_scroll();
                 }
                 KeyCode::BackTab => {
                     self.page = (self.page + PAGES.len() - 1) % PAGES.len();
                     if self.page == 7 {
-                        self.open_settings(threads);
+                        self.open_settings(threads, port);
                     }
                     self.reset_scroll();
                 }
@@ -261,18 +288,39 @@ impl App {
                     self.owned_selection = owned.keys().next_back().copied()
                 }
                 KeyCode::Enter if self.page == 6 => self.edit_color(owned),
-                KeyCode::Up if self.page == 7 => self.settings_selection = 0,
-                KeyCode::Down if self.page == 7 => self.settings_selection = 1,
+                KeyCode::Up if self.page == 7 => {
+                    self.settings_selection = self.settings_selection.saturating_sub(1)
+                }
+                KeyCode::Down if self.page == 7 => {
+                    self.settings_selection = (self.settings_selection + 1).min(2)
+                }
                 KeyCode::Left | KeyCode::Char('-') if self.page == 7 => {
-                    self.settings_selection = 1;
-                    self.thread_draft = self.thread_draft.saturating_sub(1).max(1);
+                    if self.settings_selection == 2 {
+                        self.port_draft = self.port_draft.saturating_sub(1).max(1);
+                    } else {
+                        self.settings_selection = 1;
+                        self.thread_draft = self.thread_draft.saturating_sub(1).max(1);
+                    }
                 }
                 KeyCode::Right | KeyCode::Char('+' | '=') if self.page == 7 => {
-                    self.settings_selection = 1;
-                    self.thread_draft = (self.thread_draft + 1).min(MAX_MINING_THREADS);
+                    if self.settings_selection == 2 {
+                        self.port_draft = self.port_draft.saturating_add(1);
+                    } else {
+                        self.settings_selection = 1;
+                        self.thread_draft = (self.thread_draft + 1).min(MAX_MINING_THREADS);
+                    }
                 }
-                KeyCode::Char('n') if self.page == 7 => self.command = Some("threads ".into()),
+                KeyCode::Char('n') if self.page == 7 => {
+                    self.command = Some(if self.settings_selection == 2 {
+                        "port ".into()
+                    } else {
+                        "threads ".into()
+                    })
+                }
                 KeyCode::Enter if self.page == 7 => {
+                    if self.settings_selection == 2 {
+                        return Ok(Some(format!("port {}", self.port_draft)));
+                    }
                     return Ok(Some(format!(
                         "threads {}",
                         if self.settings_selection == 0 {
@@ -326,7 +374,7 @@ impl App {
                         self.page = 6;
                         self.reset_scroll();
                     }
-                    6 => self.open_settings(threads),
+                    6 => self.open_settings(threads, port),
                     _ => return Ok(Some("quit".into())),
                 },
                 KeyCode::Enter if self.page == 2 => {
@@ -340,8 +388,9 @@ impl App {
         }
         Ok(None)
     }
-    fn open_settings(&mut self, threads: MiningThreads) {
+    fn open_settings(&mut self, threads: MiningThreads, port: u16) {
         self.page = 7;
+        self.port_draft = port.max(1);
         self.settings_selection = usize::from(threads != MiningThreads::All);
         self.thread_draft = threads.resolved().min(MAX_MINING_THREADS);
         self.reset_scroll();
@@ -354,6 +403,29 @@ impl App {
         }
     }
     pub fn command_result(&mut self, command: &str, result: &Result<bool>, mining: bool) {
+        if command.split_whitespace().next() == Some("peer") {
+            self.network.command_result(result);
+            self.message = match result {
+                Ok(_) => "Peer configuration saved".into(),
+                Err(error) => format!("Peer change rejected: {error}"),
+            };
+            return;
+        }
+        if command.split_whitespace().next() == Some("port") {
+            self.message = match result {
+                Ok(_) => "TCP port saved".into(),
+                Err(error) => format!("Port setting rejected: {error}"),
+            };
+            if result.is_ok()
+                && let Some(port) = command
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|value| value.parse().ok())
+            {
+                self.port_draft = port;
+            }
+            return;
+        }
         if command.split_whitespace().next() == Some("threads") {
             self.message = match result {
                 Ok(_) => "Mining thread preference saved".into(),
@@ -440,6 +512,8 @@ impl App {
             control,
             settings_selection,
             thread_draft,
+            port_draft,
+            network,
             command,
             ownership,
             scroll,
@@ -461,7 +535,7 @@ impl App {
                 Span::styled(if mining { " MINING " } else { " MINING STOPPED " }, Style::default().fg(if mining { Color::Green } else { Color::DarkGray })),
             ]);
             frame.render_widget(Paragraph::new(vec![title, Line::from(format!(" Height {}  •  Sessions {}  •  Pending {}  •  Owned {}  •  Threads {}", view.status["height"], view.status["connections"], view.status["mempool"], view.status["owned"].as_array().map_or(0, Vec::len), view.status["mining_threads"]))]), regions[0]);
-            frame.render_widget(Tabs::new(PAGES.iter().copied()).select(*page).highlight_style(Style::default().fg(Color::Black).bg(ACCENT)), regions[1]);
+            frame.render_widget(Tabs::new(PAGES.iter().copied()).padding("", "").select(*page).highlight_style(Style::default().fg(Color::Black).bg(ACCENT)), regions[1]);
             match *page {
                 0 => canvas(frame, regions[2], &view, *selection, *ownership, *show_owned),
                 1 => controls(frame, regions[2], *control, online, mining),
@@ -477,7 +551,8 @@ impl App {
                 }
                 5 => text_panel(frame, regions[2], "Keyboard reference", HELP, scroll),
                 6 => owned_menu(frame, regions[2], &view, *owned_selection),
-                _ => settings_panel(frame, regions[2], &view.status, *settings_selection, *thread_draft),
+                8 => network.draw(frame, regions[2], &view.status),
+                _ => settings_panel(frame, regions[2], &view.status, *settings_selection, *thread_draft, *port_draft),
             }
             let (text, title) = match command {
                 Some(line) => (format!(":{line}█"), "Command • Enter submits • Esc cancels"),
@@ -488,6 +563,7 @@ impl App {
             };
             frame.render_widget(Paragraph::new(text).block(panel(title)).style(Style::default().fg(if command.is_some() { ACCENT } else { Color::Gray })), regions[3]);
             if let Some(editor) = editor { editor.draw(frame, &view); }
+            network.draw_editor(frame);
         })?;
         Ok(())
     }
@@ -615,7 +691,7 @@ fn diagnostics(
         scroll,
     );
 }
-const HELP: &str = "Tab / Shift-Tab or 1–8   Switch pages\n↑/↓/←/→ on Canvas         Select parcel (viewport follows on small terminals)\nv                        Toggle RGB / ownership colors\np / t                    Color picker / transfer selected parcel\nb / 7                    Open owned parcels and acquisition history\nh                        Show/hide your parcel outlines on the canvas\ns / 8                    Settings: mining thread count or all available CPUs\nColor picker             Type a name or hex; ↑/↓ select; Tab completes; Enter sends; Esc cancels\nm                        Start or stop mining independently\no                        Go offline or reconnect independently\ne                        Export status.json, state.json and canvas.ppm\n:                        Open command input; Esc cancels\nq / Ctrl-C               Stop jobs and mining, close sockets, restore terminal\n\nControls submenu: ↑/↓ then Enter to apply.\nTests submenu: ↑/↓ then Enter; x cancels the active diagnostic.\nDebug submenu: ←/→ selects Status, Peers, Chain, Mempool, Sync, Config.\nPgUp / PgDn scroll output; Home oldest; End follows latest.\n\nCommands:\nstatus | identity | owned | mining on|off | threads COUNT|all | network on|off\npaint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | export [PATH.ppm] | quit\n\nDiagnostic jobs keep this UI responsive and save full output under data-dir/diagnostics.\nCargo, Python 3 and OpenSSL are needed for the full validation suite.\nSet PIXEL_WORKSPACE if the executable has moved away from its source tree.\nTests can start isolated local nodes even while this node is offline.\nMining benchmarks use real 23-bit proof of work and can take several minutes.\n\nIdentity persists, but chain storage is in memory. Restart with surviving peers for recovery.";
+const HELP: &str = "Tab / Shift-Tab or 1–9   Switch pages\n↑/↓/←/→ on Canvas         Select parcel (viewport follows on small terminals)\nv                        Toggle RGB / ownership colors\np / t                    Color picker / transfer selected parcel\nb / 7                    Open owned parcels and acquisition history\nh                        Show/hide your parcel outlines on the canvas\ns / 8                    Settings: mining threads and TCP port\n9                        Network: saved IP addresses, aliases, connection status\nNetwork page             a adds; Enter/e edits; d removes; o online/offline\nColor picker             Type a name or hex; ↑/↓ select; Tab completes; Enter sends; Esc cancels\nm                        Start or stop mining independently\no                        Go offline or reconnect independently\ne                        Export status.json, state.json and canvas.ppm\n:                        Open command input; Esc cancels\nq / Ctrl-C               Stop jobs and mining, close sockets, restore terminal\n\nControls submenu: ↑/↓ then Enter to apply.\nTests submenu: ↑/↓ then Enter; x cancels the active diagnostic.\nDebug submenu: ←/→ selects Status, Peers, Chain, Mempool, Sync, Config.\nPgUp / PgDn scroll output; Home oldest; End follows latest.\n\nCommands:\nstatus | identity | owned | mining on|off | threads COUNT|all | port PORT | network on|off\npeer add IP[:PORT] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [ALIAS] | peer remove IP[:PORT]\npaint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | export [PATH.ppm] | quit\n\nDiagnostic jobs keep this UI responsive and save full output under data-dir/diagnostics.\nCargo, Python 3 and OpenSSL are needed for the full validation suite.\nSet PIXEL_WORKSPACE if the executable has moved away from its source tree.\nTests can start isolated local nodes even while this node is offline.\nMining benchmarks use real 23-bit proof of work and can take several minutes.\n\nIdentity persists, but chain storage is in memory. Restart with surviving peers for recovery.";
 
 #[cfg(test)]
 mod tests {

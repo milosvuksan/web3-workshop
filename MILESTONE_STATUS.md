@@ -11,7 +11,7 @@ This report covers the Rust prototype in this repository. No evidence has been s
 - Each node writes a 64×32 binary PPM image to `<data-dir>/canvas.ppm`, refreshed about every two seconds and on local export commands. Open it in a PPM-capable image viewer.
 - `cargo run --release --locked` opens the live color canvas, parcel inspector, thick own-parcel outlines, owned parcel/acquisition menu, named-color picker with pending previews and confirmation feedback, independent offline/mining controls, diagnostic test/benchmark runner, debug submenus, event log, and saved mining-thread settings with exact/all CPU modes. The scriptable `node` CLI also supports offline control. See [README.md](README.md) for commands and shortcuts.
 - `<data-dir>/state.json` contains ownership, RGB colors, and replay counters; `<data-dir>/status.json` contains node diagnostics.
-- `--listen` (default `127.0.0.1:7001`) is the newline-framed TCP peer protocol. It is not HTTP and cannot serve the canvas to a browser.
+- `--listen` / `--port` (default `0.0.0.0:7001`, with a saved per-node port preference) is the newline-framed TCP peer protocol. It is not HTTP and cannot serve the canvas to a browser.
 
 A web UI is **not implemented**. It is also not required by the original canvas-display requirement, which explicitly permits a generated image.
 

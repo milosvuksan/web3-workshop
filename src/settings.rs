@@ -1,7 +1,13 @@
 //! Local runtime preferences, separate from protocol state and exported chain data.
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
-use std::{fmt, fs, num::NonZeroUsize, path::Path, str::FromStr};
+use std::{
+    fmt, fs,
+    net::{IpAddr, SocketAddr},
+    num::{NonZeroU16, NonZeroUsize},
+    path::Path,
+    str::FromStr,
+};
 
 pub const MAX_MINING_THREADS: usize = 1024;
 pub fn available_threads() -> usize {
@@ -61,29 +67,221 @@ impl From<MiningThreads> for String {
         value.to_string()
     }
 }
-#[derive(Debug, Default, Serialize, Deserialize)]
+pub const DEFAULT_PORT: NonZeroU16 = NonZeroU16::new(7001).unwrap();
+pub const MAX_SAVED_PEERS: usize = 256;
+
+/// A local label and a reachable TCP endpoint, never consensus data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PeerFields")]
+pub struct SavedPeer {
+    pub address: SocketAddr,
+    pub alias: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PeerFields {
+    address: SocketAddr,
+    alias: String,
+}
+impl TryFrom<PeerFields> for SavedPeer {
+    type Error = Error;
+    fn try_from(value: PeerFields) -> Result<Self> {
+        Self::new(value.address, &value.alias)
+    }
+}
+pub fn peer_address(value: &str) -> Result<SocketAddr> {
+    let address = value
+        .parse::<SocketAddr>()
+        .or_else(|_| {
+            value
+                .parse::<IpAddr>()
+                .map(|ip| SocketAddr::new(ip, DEFAULT_PORT.get()))
+        })
+        .map_err(|_| {
+            Error::Invalid("enter an IP address, optionally with :PORT (IPv6 ports use [IP]:PORT)")
+        })?;
+    if address.port() == 0
+        || address.ip().is_unspecified()
+        || address.ip().is_multicast()
+        || address.ip() == IpAddr::V4(std::net::Ipv4Addr::BROADCAST)
+    {
+        return Err(Error::Invalid(
+            "peer must be a host IP with a port from 1 to 65535",
+        ));
+    }
+    Ok(address)
+}
+impl SavedPeer {
+    pub fn new(address: SocketAddr, alias: &str) -> Result<Self> {
+        peer_address(&address.to_string())?;
+        let alias = alias.trim();
+        if alias.chars().any(char::is_control) || alias.chars().count() > 64 {
+            return Err(Error::Invalid(
+                "alias must be at most 64 characters without control characters",
+            ));
+        }
+        Ok(Self {
+            address,
+            alias: if alias.is_empty() {
+                address.to_string()
+            } else {
+                alias.to_owned()
+            },
+        })
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     pub mining_threads: MiningThreads,
+    pub port: NonZeroU16,
+    pub peers: Vec<SavedPeer>,
+}
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            mining_threads: MiningThreads::default(),
+            port: DEFAULT_PORT,
+            peers: Vec::new(),
+        }
+    }
 }
 impl Settings {
     pub fn load(data_dir: &Path) -> Result<Self> {
         match fs::read(data_dir.join("settings.json")) {
-            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Ok(bytes) => {
+                let settings: Self = serde_json::from_slice(&bytes)?;
+                settings.validate_peers()?;
+                Ok(settings)
+            }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(error) => Err(error.into()),
         }
     }
     pub fn save(&self, data_dir: &Path) -> Result<()> {
+        self.validate_peers()?;
         let temporary = data_dir.join("settings.tmp");
         fs::write(&temporary, serde_json::to_vec_pretty(self)?)?;
         fs::rename(temporary, data_dir.join("settings.json"))?;
+        Ok(())
+    }
+    fn validate_peers(&self) -> Result<()> {
+        let mut addresses = std::collections::BTreeSet::new();
+        if self.peers.len() > MAX_SAVED_PEERS {
+            return Err(Error::Invalid("at most 256 saved peers are supported"));
+        }
+        for peer in &self.peers {
+            SavedPeer::new(peer.address, &peer.alias)?;
+            if !addresses.insert(peer.address) {
+                return Err(Error::Invalid("duplicate saved peer address"));
+            }
+        }
         Ok(())
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn port_defaults_migrate_old_settings_and_validate_boundaries() {
+        assert_eq!(Settings::default().port.get(), 7001);
+        let old: Settings = serde_json::from_str(r#"{"mining_threads":"all"}"#).unwrap();
+        assert_eq!(old.port.get(), 7001);
+        assert_eq!(old.mining_threads, MiningThreads::All);
+        assert!(old.peers.is_empty());
+        for port in [1, 7001, 65535] {
+            let settings: Settings =
+                serde_json::from_str(&format!(r#"{{"port":{port}}}"#)).unwrap();
+            assert_eq!(settings.port.get(), port);
+        }
+        for port in ["0", "-1", "65536", "1.5", "\"7001\""] {
+            assert!(serde_json::from_str::<Settings>(&format!(r#"{{"port":{port}}}"#)).is_err());
+        }
+    }
+
+    #[test]
+    fn saved_peer_addresses_aliases_and_configuration_validation() {
+        for (input, expected) in [
+            ("192.0.2.1", "192.0.2.1:7001"),
+            ("192.0.2.1:7002", "192.0.2.1:7002"),
+            ("::1", "[::1]:7001"),
+            ("[2001:db8::1]:7002", "[2001:db8::1]:7002"),
+        ] {
+            assert_eq!(peer_address(input).unwrap().to_string(), expected);
+        }
+        for input in [
+            "localhost",
+            "bad",
+            "0.0.0.0",
+            "::",
+            "255.255.255.255",
+            "224.0.0.1",
+            "ff02::1",
+            "127.0.0.1:0",
+            "127.0.0.1:65536",
+        ] {
+            assert!(peer_address(input).is_err(), "accepted {input}");
+        }
+        let peer =
+            SavedPeer::new(peer_address("192.0.2.1").unwrap(), "  Belgrade workshop  ").unwrap();
+        assert_eq!(peer.alias, "Belgrade workshop");
+        assert!(SavedPeer::new(peer.address, "bad\x1b[31m").is_err());
+        assert!(SavedPeer::new(peer.address, &"a".repeat(65)).is_err());
+        assert_eq!(
+            serde_json::from_str::<SavedPeer>(&serde_json::to_string(&peer).unwrap()).unwrap(),
+            peer
+        );
+        assert!(
+            serde_json::from_str::<SavedPeer>(r#"{"address":"0.0.0.0:7001","alias":"invalid"}"#)
+                .is_err()
+        );
+        let mut settings = Settings {
+            peers: vec![peer.clone(), peer],
+            ..Settings::default()
+        };
+        assert!(settings.validate_peers().is_err());
+        settings.peers.pop();
+        settings.validate_peers().unwrap();
+    }
+
+    #[test]
+    fn cli_port_and_discovery_options() {
+        use crate::cli::{Cli, Command};
+        use clap::Parser;
+        for command in ["node", "tui"] {
+            let Some(Command::Node(config) | Command::Tui(config)) = Cli::try_parse_from([
+                "pixel",
+                command,
+                "--port",
+                "7002",
+                "--discover",
+                "--discover-port",
+                "7100",
+            ])
+            .unwrap()
+            .command
+            else {
+                panic!("configuration");
+            };
+            assert_eq!(config.port.unwrap().get(), 7002);
+            assert!(config.discover);
+            assert_eq!(config.discover_port.get(), 7100);
+            for port in ["0", "65536", "-1"] {
+                assert!(Cli::try_parse_from(["pixel", command, "--port", port]).is_err());
+            }
+            assert!(
+                Cli::try_parse_from([
+                    "pixel",
+                    command,
+                    "--port",
+                    "7002",
+                    "--listen",
+                    "127.0.0.1:7003"
+                ])
+                .is_err()
+            );
+        }
+    }
     #[test]
     fn counts_all_and_invalid_preferences() {
         assert_eq!(
@@ -110,6 +308,7 @@ mod tests {
         );
         Settings {
             mining_threads: MiningThreads::All,
+            ..Settings::default()
         }
         .save(&directory)
         .unwrap();
@@ -119,6 +318,7 @@ mod tests {
         );
         Settings {
             mining_threads: "3".parse().unwrap(),
+            ..Settings::default()
         }
         .save(&directory)
         .unwrap();

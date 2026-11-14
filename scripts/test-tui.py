@@ -251,6 +251,26 @@ def main():
             assert status()['mining_threads'] == status()['available_threads']
             assert not status()['mining'] and not status()['online']
             assert json.loads((Path(directory) / 'settings.json').read_text())['mining_threads'] == 'all'
+            with socket.socket() as reservation:
+                reservation.bind(('127.0.0.1', 0))
+                saved_port = reservation.getsockname()[1]
+            press(b'\x1b[B\x1b[Bn' + str(saved_port).encode() + b'\r')
+            wait(lambda: status().get('port') == saved_port, 'TCP port from settings prompt')
+            assert not status()['online'] and not status()['mining']
+            assert json.loads((Path(directory) / 'settings.json').read_text()) == {'mining_threads': 'all', 'port': saved_port, 'peers': []}
+            press(b'9a192.0.2.7\rWorkshop peer\r')
+            wait(lambda: len(status().get('network_peers', [])) == 1, 'add saved peer from Network tab')
+            assert status()['network_peers'][0]['alias'] == 'Workshop peer'
+            assert status()['network_peers'][0]['address'] == '192.0.2.7:7001'
+            assert status()['network_peers'][0]['status'] == 'Offline' and not status()['online']
+            wait(lambda: 'Workshop peer' in screen_text(transcript), 'saved peer visible')
+            press(b'e\x15Renamed peer\r')
+            wait(lambda: status()['network_peers'][0]['alias'] == 'Renamed peer', 'edit peer alias')
+            press(b'a127.0.0.1:7002\rCancelled peer\x1b')
+            assert len(status()['network_peers']) == 1
+            press(b'd')
+            wait(lambda: status().get('network_peers') == [], 'remove saved peer')
+            assert json.loads((Path(directory) / 'settings.json').read_text())['peers'] == []
             if limit_cpus is not None:
                 press(b'm')
                 wait(lambda: status().get('mining') and status().get('active_mining_threads') == status().get('available_threads'), 'all available mining workers start')
@@ -297,6 +317,7 @@ def main():
                 restored = json.loads(restarted.stdout.splitlines()[0])
                 assert restored['mining_thread_setting'] == expected and not restored['mining']
                 assert restored['active_mining_threads'] == 0
+                assert restored['port'] == saved_port
             assert json.loads((Path(directory) / 'settings.json').read_text())['mining_threads'] == 'all'
         finally:
             if process.poll() is None:
@@ -305,7 +326,7 @@ def main():
             os.close(master)
             os.close(slave)
     ownership_case(args.binary)
-    print('PASS: PTY navigation, settings persistence and live thread changes, controls, outlined RGB parcels, owned receipts, pending previews, rejected edits, real color confirmation, and terminal restoration')
+    print('PASS: PTY navigation, settings persistence, TCP port selection and live thread changes, controls, outlined RGB parcels, owned receipts, pending previews, rejected edits, real color confirmation, and terminal restoration')
 
 
 if __name__ == '__main__':

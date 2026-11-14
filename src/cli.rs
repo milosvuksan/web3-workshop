@@ -75,4 +75,4 @@ pub fn key(file: PathBuf) -> Result<()> {
     );
     Ok(())
 }
-pub const HELP: &str = "status | identity | owned | paint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | threads COUNT|all | network on|off | export [PATH.ppm] | quit";
+pub const HELP: &str = "status | identity | owned | paint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | threads COUNT|all | port PORT | peer add IP[:PORT] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [ALIAS] | peer remove IP[:PORT] | network on|off | export [PATH.ppm] | quit";

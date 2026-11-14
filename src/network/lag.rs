@@ -21,8 +21,9 @@ impl Lag {
         if !self.enabled {
             return Some(0);
         }
-        let drop = self.next().is_multiple_of(10);
-        let delay = 20 + self.next() % 231;
-        if drop { None } else { Some(delay) }
+        if self.next() % 100 < 10 {
+            return None;
+        }
+        Some(20 + self.next() % 231)
     }
 }

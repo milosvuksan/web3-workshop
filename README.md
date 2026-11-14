@@ -31,9 +31,10 @@ cargo run --release --locked -- tui --offline --data-dir data/solo
 | **5 Logs** | Recent node events, command results and rejected commands; full history is appended to `node.log` |
 | **6 Help** | Keyboard reference and line commands |
 | **7 Owned** | All parcels owned by this identity, coordinates, color swatches, acquisition time and method; Enter edits color, `g` locates on the map |
-| **8 Settings** | Choose an exact mining worker count or all available CPUs; apply live and save per node |
+| **8 Settings** | Choose mining workers and the TCP port (default 7001); apply live and save per node |
+| **9 Network** | Add IP addresses and aliases, edit/remove saved peers, and view blockchain connection status and active sessions |
 
-Use **Tab / Shift-Tab** or **1–8** to change pages. Global keys: **`o`** online/offline, **`m`** start/stop mining, **`e`** export, **`:`** command prompt, **`?`** help, **`q` / Ctrl-C** quit. Enter submits commands; Esc cancels input. PgUp/PgDn scroll text, Home shows the beginning, End follows the latest output. Shortcuts are treated as text while entering a command.
+Use **Tab / Shift-Tab** or **1–9** to change pages. Global keys: **`o`** online/offline, **`m`** start/stop mining, **`e`** export, **`:`** command prompt, **`?`** help, **`q` / Ctrl-C** quit. Enter submits commands; Esc cancels input. PgUp/PgDn scroll text, Home shows the beginning, End follows the latest output. Shortcuts are treated as text while entering a command.
 
 
 Press **`8`** or **`s`** for **Settings**. Choose **Use all available** or **Use exact count**, then **Enter** to apply and save. Use **↑/↓** to select, **←/→** or **+/-** to adjust the exact count, or **`n`** to type a count. The page shows configured workers, active workers, and available logical CPUs. “All” uses the CPUs available to this process, including its CPU affinity limits. A fresh node defaults to one mining worker. Exact counts range from 1 to 1024.
@@ -46,6 +47,21 @@ cargo run --release --locked -- tui --threads 4
 ```
 
 The line CLI and `:` prompt also accept `threads all` or `threads 4`; these commands save the preference. `status` exposes `mining_thread_setting`, `mining_threads`, `active_mining_threads`, and `available_threads`. This setting controls node mining workers; the terminal/network runtime runs independently, and the existing timing benchmarks retain their reproducible single-worker workloads.
+
+In **Settings**, select **TCP port**, adjust with **←/→**, or press **`n`** to enter a port (1–65535), then apply with **Enter**. The `port 7002` command also applies and saves it. Online changes reopen the listener and reconnect peers; a busy port leaves the current network intact. Offline nodes stay offline. `--port 7002` overrides the saved port for one run and binds `0.0.0.0`; `--listen 127.0.0.1:7002` overrides both bind address and port. These startup options are mutually exclusive. A fresh node listens on **0.0.0.0:7001**.
+
+Press **`9`** for **Network**. Press **`a`** to add a peer, enter its IP address (optionally `:PORT`), press **Enter**, enter an alias, and press **Enter** again to save. A bare IP uses port **7001**; IPv6 endpoints with a port use `[2001:db8::1]:7001`. Aliases may contain spaces and are local to this node. Use **↑/↓** to select a saved peer, **Enter/e** to edit, or **d/Delete** to remove. In the editor, **Tab** changes fields, **Ctrl-U** clears a field, and **Esc** cancels.
+
+Saved peers and aliases live in `<data-dir>/settings.json` and reconnect automatically at startup. Online edits update outgoing connections immediately while preserving the listener and unrelated sessions. Offline edits are saved without opening sockets. **Connected** means a valid handshake for this blockchain; **Handshaking** means TCP is open but the handshake is pending; **Retrying** means the node is trying to connect; **Offline** follows this node's network setting. Connections retry every two seconds. Additional `--peers` targets are combined with saved peers for that run.
+
+The line CLI and `:` prompt accept:
+
+```text
+peer add 192.168.1.20 Workshop laptop
+peer add 192.168.1.21:7002 Second node
+peer edit 192.168.1.21:7002 192.168.1.22:7002 Moved node
+peer remove 192.168.1.20
+```
 
 Your parcels have **thick yellow rectangular outlines**. Other parcels have thin gray outlines. The **`›` cursor stays inside the selected parcel**, with its color fill visible. Press **`h`** to toggle ownership outlines. Arrow keys move the selection and pan the viewport; **`7`**, choose a parcel, then **`g`** locates it on the map.
 
@@ -72,6 +88,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 python3 scripts/verify-vectors.py          # Python 3 + OpenSSL; independent encoding/crypto check
 python3 scripts/network-fault-test.py      # after release build; real TCP fault injection
+python3 scripts/test-network-settings.py   # debug build; UDP discovery and live/saved port settings
+python3 scripts/test-peers.py              # saved peer aliases, live edits, and restart reconnection
 python3 scripts/test-shutdown.py --binary target/release/baneworkshop
 python3 scripts/test-controls.py --binary target/release/baneworkshop
 python3 scripts/test-tui.py --binary target/release/baneworkshop
@@ -92,7 +110,18 @@ target/release/baneworkshop node --listen 127.0.0.1:7002 --peers 127.0.0.1:7001,
 target/release/baneworkshop node --listen 127.0.0.1:7003 --peers 127.0.0.1:7001,127.0.0.1:7002 --data-dir data/c --lag-seed 43
 ```
 
-Each node creates/reloads its own private `identity.seed` with owner-only Unix access and prints its public key. Use a unique data directory for each process. For LAN use, bind `--listen 0.0.0.0:7001` and configure the actual LAN addresses of all other nodes. Lag remains enabled unless `--no-lag` is explicitly supplied.
+Each node creates/reloads its own private `identity.seed` with owner-only Unix access and prints its public key. Use a unique data directory for each process. For LAN use, the default bind address is `0.0.0.0`; configure the actual LAN addresses of all other nodes with `--peers`. Lag remains enabled unless `--no-lag` is explicitly supplied.
+
+The TCP wire protocol follows `NETWORK.md`: bounded newline-delimited JSON, repeated handshakes, rotating block requests and transaction announcements, future-block retries, and per-session FIFO lag (10% loss, 20–250 ms). Both inbound and outbound connections are retained. Debug → Peers shows addresses and identities; Debug → Chain labels miners as `ME`, a saved peer's alias, a ready peer's address, or an eight-character key prefix.
+
+The optional UDP discovery extension is enabled with `--discover` (default discovery port **7000**, configurable with `--discover-port`). It broadcasts the chain, TCP port, and public identity every two seconds to the LAN and loopback, and connects to valid discovered peers. It validates genesis and keys, ignores itself and duplicate identities/addresses, and uses the datagram sender's IP. Explicit `--peers` works without discovery and on networks that block broadcast. Going offline closes discovery as well as TCP.
+
+```bash
+# Two LAN nodes can discover each other without --peers.
+cargo run --release --locked -- node --discover --data-dir data/lan-a
+cargo run --release --locked -- node --discover --port 7002 --data-dir data/lan-b
+```
+
 
 Console commands:
 

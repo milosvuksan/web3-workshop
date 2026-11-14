@@ -99,7 +99,7 @@ New valid blocks, including side branches, and newly admitted transactions forwa
 
 | Setting | Default / rationale |
 | --- | --- |
-| Listen address | `127.0.0.1:7001`; explicit LAN bind needed for workshop machines |
+| Listen address | `0.0.0.0:7001`; port saved in `settings.json`, overridden for one run by `--port` or `--listen` |
 | Peer input | IP socket addresses; explicit full mesh, no DNS discovery |
 | Data directory | `data/node`; use a unique directory per running process |
 | Identity | `identity.seed` within data directory, automatically created from OS randomness; `--key PATH` explicitly loads an existing seed |
@@ -113,6 +113,7 @@ New valid blocks, including side branches, and newly admitted transactions forwa
 | Ownership history | Non-consensus metadata derived from the canonical chain; latest acquisition block timestamp (UTC), mining/transfer source and sender; rebuilt on reorg/recovery; paint and self-transfer preserve the acquisition date |
 | Color input | TUI color picker offers explicit named-color autocomplete, preview, and RGB hex input; admitted local edits show labeled pending previews inside parcel outlines and the Owned list until block confirmation; rejected edits remain open; CLI accepts names too; strict wire RGB encoding remains unchanged |
 | Mining | Off until `--mine` or `mining on`; one CPU worker by default, configurable via Settings or `threads COUNT|all`; disjoint nonce lanes, shared cancellation, all workers joined on stop; fixed 23-bit target, no reduced-difficulty CLI mode |
+| Saved peers | IP/port and local alias in `settings.json`; Network tab adds/edits/removes peers, reconnects automatically, and shows handshake status; `--peers` adds temporary targets |
 | Mining settings | Exact count (1–1024) or all available logical CPUs; saved per data directory in `settings.json`; `--threads COUNT|all` overrides the preference for that run; changing the count preserves mining/network on/off states |
 | Cancellation | Check at most every 16,384 hashes; new tip or changed mempool replaces the candidate; queued successful results survive periodic maintenance; stale results fail generation/parent checks and accepted results undergo full validation |
 | Mempool | 4096 entries; arrival order, state-aware admission/selection, 256 selected per block; local commands reserve pending counters |

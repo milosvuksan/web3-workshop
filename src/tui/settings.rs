@@ -6,22 +6,24 @@ pub(super) fn settings_panel(
     status: &Value,
     selected: usize,
     draft: usize,
+    port: u16,
 ) {
     let regions = Layout::vertical([
+        Constraint::Length(6),
         Constraint::Length(5),
-        Constraint::Length(4),
         Constraint::Min(1),
     ])
     .split(area);
     let summary = format!(
-        "Mining thread setting: {}\nConfigured workers: {} • active: {}\nAvailable logical CPUs: {}",
+        "Mining thread setting: {}\nConfigured workers: {} • active: {}\nAvailable logical CPUs: {}\nTCP listen address: {}",
         status["mining_thread_setting"].as_str().unwrap_or("1"),
         status["mining_threads"],
         status["active_mining_threads"],
-        status["available_threads"]
+        status["available_threads"],
+        status["listen"]
     );
     frame.render_widget(
-        Paragraph::new(summary).block(panel("Settings • mining CPU workers")),
+        Paragraph::new(summary).block(panel("Settings • mining and network")),
         regions[0],
     );
     let all = format!(
@@ -29,12 +31,13 @@ pub(super) fn settings_panel(
         status["available_threads"]
     );
     let exact = format!("Use exact count: {draft}    ←/→ adjust");
+    let tcp = format!("TCP port: {port}    ←/→ adjust • n enters a port");
     menu(
         frame,
         regions[1],
         "↑/↓ choose • Enter applies and saves",
-        &[&all, &exact],
+        &[&all, &exact, &tcp],
         selected,
     );
-    frame.render_widget(Paragraph::new("Select all available or an exact worker count.\n\n↑/↓ selects a mode • ←/→ or +/- adjusts the exact count\nn opens a count prompt (1–1024, or all) • Enter saves\n\nChanges take effect immediately. Active mining workers restart with the new count; stopped mining stays stopped. Networking and offline mode keep their current settings.\n\nSaved in this node's data directory as settings.json. Startup --threads COUNT|all overrides the saved preference for that run.\n\nThis setting controls mining workers. The terminal and network continue running independently.").block(panel("How to change thread usage")).wrap(Wrap { trim: false }), regions[2]);
+    frame.render_widget(Paragraph::new("↑/↓ selects a setting • ←/→ or +/- adjusts its value\nn opens a prompt • Enter applies and saves\n\nMining changes restart active workers; stopped mining stays stopped.\n\nTCP port: 1–65535 (default 7001). Online changes reopen the listener and peer connections immediately. A busy port leaves the current network running. Offline nodes stay offline.\n\nSaved in settings.json in this node's data directory. Startup --threads, --port or --listen overrides the saved preference for that run.").block(panel("How to change settings")).wrap(Wrap { trim: false }), regions[2]);
 }

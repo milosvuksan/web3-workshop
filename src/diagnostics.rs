@@ -74,6 +74,22 @@ fn plan(task: usize) -> Vec<Step> {
             Step::new(
                 "python3",
                 &[
+                    "scripts/test-network-settings.py",
+                    "--binary",
+                    "target/release/baneworkshop",
+                ],
+            ),
+            Step::new(
+                "python3",
+                &[
+                    "scripts/test-peers.py",
+                    "--binary",
+                    "target/release/baneworkshop",
+                ],
+            ),
+            Step::new(
+                "python3",
+                &[
                     "scripts/test-shutdown.py",
                     "--binary",
                     "target/release/baneworkshop",
@@ -115,7 +131,26 @@ fn plan(task: usize) -> Vec<Step> {
         ])],
         8 => vec![python("scripts/verify-vectors.py")],
         9 => vec![build()],
-        10 => vec![build(), python("scripts/network-fault-test.py")],
+        10 => vec![
+            build(),
+            python("scripts/network-fault-test.py"),
+            Step::new(
+                "python3",
+                &[
+                    "scripts/test-network-settings.py",
+                    "--binary",
+                    "target/release/baneworkshop",
+                ],
+            ),
+            Step::new(
+                "python3",
+                &[
+                    "scripts/test-peers.py",
+                    "--binary",
+                    "target/release/baneworkshop",
+                ],
+            ),
+        ],
         11..=13 => vec![
             cargo(&["build", "--locked"]),
             python(
@@ -354,6 +389,8 @@ mod tests {
             "test-controls.py",
             "test-tui.py",
             "network-fault-test.py",
+            "test-network-settings.py",
+            "test-peers.py",
             "workshop-demo",
         ] {
             assert!(suite.contains(script));

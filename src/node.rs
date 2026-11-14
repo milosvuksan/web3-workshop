@@ -13,7 +13,7 @@ use crate::{
     ownership::Ownership,
     protocol::{Block, params::genesis},
     render,
-    settings::{MiningThreads, Settings, available_threads},
+    settings::{MiningThreads, SavedPeer, Settings, available_threads, peer_address},
 };
 use ed25519_dalek::SigningKey;
 use serde_json::json;
@@ -38,13 +38,15 @@ pub fn now() -> u64 {
         .as_secs()
 }
 struct Connection {
-    sender: mpsc::Sender<Message>,
+    sender: peer::Sender,
+    address: std::net::SocketAddr,
     ready: bool,
     _close: tokio::sync::oneshot::Sender<()>,
     identity: Option<crate::protocol::PublicKey>,
 }
 pub struct Node {
     config: Config,
+    settings: Settings,
     network: Option<peer::Network>,
     interactive: bool,
     logs: VecDeque<String>,
@@ -62,6 +64,7 @@ pub struct Node {
     mining_result_pending: Arc<AtomicBool>,
     announcement_cursor: usize,
     request_cursor: usize,
+    peer_identities: BTreeMap<std::net::SocketAddr, crate::protocol::PublicKey>,
 }
 impl Node {
     fn hello(&self) -> Message {
@@ -138,13 +141,13 @@ impl Node {
     fn accept(&mut self, block: Block) {
         let hash = block.hash();
         let old_tip = self.chain.tip;
-        let known = self.chain.entries.contains_key(&hash);
+        if self.chain.entries.contains_key(&hash) || self.sync.waiting.contains_key(&hash) {
+            return;
+        }
         match self.chain.insert(block.clone(), now()) {
             Ok(changed) => {
                 self.sync.wanted.remove(&hash);
-                if !known {
-                    self.broadcast(Message::Block { block });
-                }
+                self.broadcast(Message::Block { block });
                 if changed {
                     self.owned
                         .update(&self.chain, crypto::public_key(&self.key));
@@ -160,19 +163,13 @@ impl Node {
                 }
             }
             Err(Error::UnknownParent(parent)) => {
-                if block.transactions.len() <= crate::protocol::params::MAX_TRANSACTIONS
-                    && crate::protocol::validation::valid_pow(hash)
-                {
-                    self.sync.wanted.remove(&hash);
-                    self.sync.defer(block);
-                    self.sync.want_parent(parent);
-                }
+                self.sync.wanted.remove(&hash);
+                self.sync.defer(block);
+                self.sync.want_parent(parent);
             }
             Err(Error::Future) => {
-                if crate::protocol::validation::valid_pow(hash) {
-                    self.sync.wanted.remove(&hash);
-                    self.sync.defer(block);
-                }
+                self.sync.wanted.remove(&hash);
+                self.sync.defer(block);
             }
             Err(error) => {
                 self.sync.wanted.remove(&hash);
@@ -228,6 +225,9 @@ impl Node {
                 self.peers.remove(&id);
                 self.note(format!("rejected handshake on session {id}"));
                 return;
+            }
+            if self.peer_addresses().contains(&peer.address) {
+                self.peer_identities.insert(peer.address, identity);
             }
             if !peer.ready {
                 let peer = self.peers.get_mut(&id).unwrap();
@@ -357,6 +357,11 @@ impl Node {
             "available_threads": available_threads(),
             "active_mining_threads": if self.mining { self.job.as_ref().map_or(0, Job::worker_count) } else { 0 },
             "online": self.network.is_some(), "listen": self.config.listen,
+            "port": self.config.listen.expect("resolved address").port(),
+            "discovery": self.config.discover, "discover_port": self.config.discover_port,
+            "network_peers": self.peer_status(),
+            "network_sessions": self.peers.values().filter(|p| !p.sender.is_closed()).map(|p| json!({"address":p.address,"ready":p.ready,"identity":p.identity,"alias":self.session_alias(p)})).collect::<Vec<_>>(),
+            "startup_peers": self.config.peers,
             "lag": !self.config.no_lag, "connections": self.peers.values().filter(|p| p.ready).count(),
             "mempool": self.pool.transactions.len(), "waiting": self.sync.waiting.len(),
             "owned": state.parcels.iter().enumerate().filter(|(_, p)| p.owner == Some(identity)).map(|(id, _)| id).collect::<Vec<_>>()})
@@ -410,11 +415,12 @@ impl Node {
         if online {
             self.network = Some(
                 peer::start(
-                    self.config.listen,
-                    self.config.peers.clone(),
+                    self.config.listen.expect("resolved address"),
+                    self.peer_addresses(),
                     self.events.clone(),
                     !self.config.no_lag,
                     self.config.lag_seed,
+                    self.discovery(),
                 )
                 .await?,
             );
@@ -435,16 +441,16 @@ impl Node {
                 let sessions: Vec<_> = self
                     .peers
                     .iter()
-                    .map(|(id, p)| json!({"session":id,"ready":p.ready,"identity":p.identity}))
+                    .map(|(id, p)| json!({"session":id,"ready":p.ready,"identity":p.identity,"address":p.address}))
                     .collect();
-                serde_json::to_string_pretty(&json!({"online": self.network.is_some(), "listen":self.config.listen,"configured_peers": self.config.peers,"sessions":sessions})).unwrap_or_default()
+                serde_json::to_string_pretty(&json!({"online": self.network.is_some(), "listen":self.config.listen,"configured_peers": self.config.peers,"saved_peers":self.peer_status(),"sessions":sessions})).unwrap_or_default()
             }
             2 => {
                 let mut hash = self.chain.tip;
                 let mut blocks = Vec::new();
                 for _ in 0..100 {
                     let block = &self.chain.entries[&hash].block;
-                    blocks.push(json!({"hash":hash,"block":block}));
+                    blocks.push(json!({"hash":hash,"miner_label":self.miner_label(block.miner),"block":block}));
                     if block.height == 0 {
                         break;
                     }
@@ -466,11 +472,146 @@ impl Node {
             ),
         }
     }
-    fn set_threads(&mut self, threads: MiningThreads) -> Result<()> {
-        Settings {
-            mining_threads: threads,
+    fn discovery(&self) -> Option<crate::network::discovery::Discovery> {
+        self.config
+            .discover
+            .then(|| crate::network::discovery::Discovery {
+                port: self.config.discover_port.get(),
+                identity: crypto::public_key(&self.key),
+            })
+    }
+    fn miner_label(&self, miner: crate::protocol::PublicKey) -> String {
+        if miner == crypto::public_key(&self.key) {
+            return "ME".into();
         }
-        .save(&self.config.data_dir)?;
+        self.peers
+            .values()
+            .find(|p| p.ready && p.identity == Some(miner))
+            .map_or_else(
+                || miner.to_string()[..8].to_owned(),
+                |p| {
+                    self.session_alias(p)
+                        .unwrap_or_else(|| p.address.to_string())
+                },
+            )
+    }
+    fn peer_addresses(&self) -> Vec<std::net::SocketAddr> {
+        self.config
+            .peers
+            .iter()
+            .copied()
+            .chain(self.settings.peers.iter().map(|p| p.address))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+    fn session_alias(&self, session: &Connection) -> Option<String> {
+        self.settings
+            .peers
+            .iter()
+            .find(|peer| {
+                peer.address == session.address
+                    || session.identity.is_some_and(|identity| {
+                        self.peer_identities.get(&peer.address) == Some(&identity)
+                    })
+            })
+            .map(|peer| peer.alias.clone())
+    }
+    fn peer_status(&self) -> Vec<serde_json::Value> {
+        self.settings.peers.iter().map(|saved| {
+            let identity = self.peer_identities.get(&saved.address);
+            let sessions: Vec<_> = self.peers.values().filter(|p| !p.sender.is_closed()
+                && (p.address == saved.address || identity.is_some_and(|key| p.identity == Some(*key)))).collect();
+            let ready = sessions.iter().filter(|p| p.ready).count();
+            let status = if self.network.is_none() { "Offline" } else if ready > 0 { "Connected" }
+                else if !sessions.is_empty() { "Handshaking" } else { "Retrying" };
+            json!({"address":saved.address,"alias":saved.alias,"status":status,"sessions":ready,"identity":identity})
+        }).collect()
+    }
+    fn save_peers(&mut self, peers: Vec<SavedPeer>) -> Result<()> {
+        let mut settings = self.settings.clone();
+        settings.peers = peers;
+        settings.save(&self.config.data_dir)?;
+        self.settings = settings;
+        let addresses = self.peer_addresses();
+        if let Some(network) = &self.network {
+            network.set_peers(addresses.clone());
+        }
+        // Cancel removed outgoing sessions immediately; inbound sessions remain welcome.
+        self.peers.retain(|_, session| {
+            !self.peer_identities.contains_key(&session.address)
+                || addresses.contains(&session.address)
+        });
+        self.note(format!(
+            "Saved {} peers to settings.json",
+            self.settings.peers.len()
+        ));
+        Ok(())
+    }
+    fn add_peer(&mut self, old: Option<std::net::SocketAddr>, peer: SavedPeer) -> Result<()> {
+        let mut peers = self.settings.peers.clone();
+        if let Some(old) = old {
+            let index = peers
+                .iter()
+                .position(|p| p.address == old)
+                .ok_or(Error::Invalid("saved peer not found"))?;
+            if peers
+                .iter()
+                .any(|p| p.address == peer.address && p.address != old)
+            {
+                return Err(Error::Invalid("a peer with this address is already saved"));
+            }
+            peers[index] = peer;
+        } else if let Some(existing) = peers.iter_mut().find(|p| p.address == peer.address) {
+            *existing = peer;
+        } else {
+            peers.push(peer);
+        }
+        self.save_peers(peers)
+    }
+    async fn set_port(&mut self, port: std::num::NonZeroU16) -> Result<()> {
+        let mut address = self.config.listen.expect("resolved address");
+        address.set_port(port.get());
+        // Bind first so a busy port leaves the existing network intact.
+        let replacement = if self.network.is_some() && self.config.listen != Some(address) {
+            Some(
+                peer::start(
+                    address,
+                    self.peer_addresses(),
+                    self.events.clone(),
+                    !self.config.no_lag,
+                    self.config.lag_seed,
+                    self.discovery(),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        let mut settings = self.settings.clone();
+        settings.port = port;
+        if let Err(error) = settings.save(&self.config.data_dir) {
+            if let Some(network) = replacement {
+                network.shutdown().await;
+            }
+            return Err(error);
+        }
+        if let Some(network) = replacement {
+            self.peers.clear();
+            if let Some(old) = self.network.replace(network) {
+                old.shutdown().await;
+            }
+        }
+        self.settings = settings;
+        self.config.listen = Some(address);
+        self.note(format!("TCP port: {port}; saved to settings.json"));
+        Ok(())
+    }
+    fn set_threads(&mut self, threads: MiningThreads) -> Result<()> {
+        let mut settings = self.settings.clone();
+        settings.mining_threads = threads;
+        settings.save(&self.config.data_dir)?;
+        self.settings = settings;
         let changed = self.config.threads != Some(threads)
             || self
                 .job
@@ -495,6 +636,28 @@ impl Node {
             ["status"] => self.response(self.status().to_string()),
             ["identity"] => self.response(crypto::public_key(&self.key).to_string()),
             ["owned"] => self.response(self.owned.json(&self.chain.head().state).to_string()),
+            ["peer", "add", address, alias @ ..] => self.add_peer(
+                None,
+                SavedPeer::new(peer_address(address)?, &alias.join(" "))?,
+            )?,
+            ["peer", "edit", old, address, alias @ ..] => self.add_peer(
+                Some(peer_address(old)?),
+                SavedPeer::new(peer_address(address)?, &alias.join(" "))?,
+            )?,
+            ["peer", "remove", address] => {
+                let address = peer_address(address)?;
+                let peers: Vec<_> = self
+                    .settings
+                    .peers
+                    .iter()
+                    .filter(|p| p.address != address)
+                    .cloned()
+                    .collect();
+                if peers.len() == self.settings.peers.len() {
+                    return Err(Error::Invalid("saved peer not found"));
+                }
+                self.save_peers(peers)?;
+            }
             ["mining", mode @ ("on" | "off")] => {
                 self.mining = *mode == "on";
                 self.restart_miner();
@@ -506,6 +669,13 @@ impl Node {
                         "OFF (worker stopped)"
                     }
                 ));
+            }
+            ["port", port] => {
+                self.set_port(
+                    port.parse()
+                        .map_err(|_| Error::Invalid("port must be 1–65535"))?,
+                )
+                .await?
             }
             ["threads", count] => self.set_threads(count.parse()?)?,
             ["network", mode @ ("on" | "off")] => self.set_online(*mode == "on").await?,
@@ -546,8 +716,15 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
         None
     };
     std::fs::create_dir_all(&config.data_dir)?;
+    let settings = Settings::load(&config.data_dir)?;
     if config.threads.is_none() {
-        config.threads = Some(Settings::load(&config.data_dir)?.mining_threads);
+        config.threads = Some(settings.mining_threads);
+    }
+    if config.listen.is_none() {
+        config.listen = Some(std::net::SocketAddr::from((
+            [0, 0, 0, 0],
+            config.port.unwrap_or(settings.port).get(),
+        )));
     }
     let key = match &config.key {
         Some(path) => crypto::load_key(path)?,
@@ -563,11 +740,22 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
     } else {
         Some(
             peer::start(
-                config.listen,
-                config.peers.clone(),
+                config.listen.expect("resolved address"),
+                config
+                    .peers
+                    .iter()
+                    .copied()
+                    .chain(settings.peers.iter().map(|p| p.address))
+                    .collect(),
                 events.clone(),
                 !config.no_lag,
                 config.lag_seed,
+                config
+                    .discover
+                    .then(|| crate::network::discovery::Discovery {
+                        port: config.discover_port.get(),
+                        identity: crypto::public_key(&key),
+                    }),
             )
             .await?,
         )
@@ -575,6 +763,7 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
     let mut node = Node {
         mining: config.mine,
         config,
+        settings,
         network,
         interactive,
         logs: VecDeque::new(),
@@ -591,6 +780,7 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
         mining_result_pending: Arc::new(AtomicBool::new(false)),
         announcement_cursor: 0,
         request_cursor: 0,
+        peer_identities: BTreeMap::new(),
     };
     node.note(format!(
         "identity {} {} {} lag={}\n{}",
@@ -600,7 +790,7 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
         } else {
             "offline; configured address"
         },
-        node.config.listen,
+        node.config.listen.expect("resolved address"),
         !node.config.no_lag,
         crate::cli::HELP
     ));
@@ -619,7 +809,11 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
                 _ = frames.tick(), if interactive => {
                     let app = ui.as_mut().expect("interactive UI");
                     if let Err(error) = app.runner.poll() { node.note(format!("diagnostic: {error}")); }
-                    if let Some(command) = app.input(node.mining, node.network.is_some(), &node.config.data_dir, &node.owned.parcels, node.config.threads.unwrap_or_default())? {
+                    if let Some(command) = app.input(crate::tui::Input {
+                        mining: node.mining, online: node.network.is_some(), data_dir: &node.config.data_dir,
+                        owned: &node.owned.parcels, threads: node.config.threads.unwrap_or_default(),
+                        port: node.config.listen.expect("resolved address").port(), saved_peers: &node.settings.peers,
+                    })? {
                         let result = node.command(&command).await;
                         app.command_result(&command, &result, node.mining);
                         match result {
@@ -645,11 +839,11 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
                     None => stdin_open = false,
                 },
                 Some(event) = receiver.recv() => match event {
-                    Event::Connected { id, sender, close } => {
+                    Event::Connected { id, sender, close, address } => {
                         // Old Connected events can remain queued across an
                         // offline/online toggle; their transports are closed.
                         if node.network.is_some() && !sender.is_closed() {
-                            node.peers.insert(id, Connection { sender, ready: false, _close: close, identity: None });
+                            node.peers.insert(id, Connection { sender, address, ready: false, _close: close, identity: None });
                             node.send(id, node.hello());
                         }
                     }
@@ -689,16 +883,12 @@ mod tests {
         let (events, _) = mpsc::channel(16);
         Node {
             config: Config {
-                listen: "127.0.0.1:0".parse().unwrap(),
-                peers: Vec::new(),
-                data_dir: std::path::PathBuf::new(),
-                key: None,
+                listen: Some("127.0.0.1:0".parse().unwrap()),
                 no_lag: true,
-                lag_seed: 1,
-                mine: false,
                 offline: true,
-                threads: None,
+                ..Config::default()
             },
+            settings: Settings::default(),
             network: None,
             interactive: false,
             logs: VecDeque::new(),
@@ -716,7 +906,123 @@ mod tests {
             mining_result_pending: Arc::new(AtomicBool::new(false)),
             announcement_cursor: 0,
             request_cursor: 0,
+            peer_identities: BTreeMap::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn saved_peer_commands_are_atomic_and_preserve_other_preferences() {
+        let directory =
+            std::env::temp_dir().join(format!("pixel-saved-peers-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut node = node();
+        node.config.data_dir = directory.clone();
+        node.command("peer add 192.0.2.1 Main workshop")
+            .await
+            .unwrap();
+        node.command("peer add [::1]:7002 Local IPv6")
+            .await
+            .unwrap();
+        node.command("peer add 192.0.2.1 Renamed peer")
+            .await
+            .unwrap();
+        assert_eq!(node.settings.peers.len(), 2);
+        assert_eq!(node.settings.peers[0].alias, "Renamed peer");
+        assert_eq!(node.peer_status()[0]["status"], "Offline");
+        node.command("threads 3").await.unwrap();
+        node.command("port 7003").await.unwrap();
+        let original = Settings::load(&directory).unwrap();
+        for invalid in [
+            "peer add bad Nope",
+            "peer add 0.0.0.0 Nope",
+            "peer edit 192.0.2.1 [::1]:7002 Duplicate",
+            "peer remove 192.0.2.99",
+        ] {
+            assert!(node.command(invalid).await.is_err());
+            assert_eq!(Settings::load(&directory).unwrap().peers, original.peers);
+        }
+        std::fs::create_dir(directory.join("settings.tmp")).unwrap();
+        assert!(
+            node.command("peer add 192.0.2.7 Failed save")
+                .await
+                .is_err()
+        );
+        assert_eq!(node.settings.peers, original.peers);
+        std::fs::remove_dir(directory.join("settings.tmp")).unwrap();
+        node.command("peer edit 192.0.2.1 192.0.2.2:7010 Moved peer")
+            .await
+            .unwrap();
+        node.command("peer remove [::1]:7002").await.unwrap();
+        let saved = Settings::load(&directory).unwrap();
+        assert_eq!(saved.peers.len(), 1);
+        assert_eq!(saved.peers[0].address.to_string(), "192.0.2.2:7010");
+        assert_eq!(saved.peers[0].alias, "Moved peer");
+        assert_eq!(saved.port.get(), 7003);
+        assert_eq!(saved.mining_threads.to_string(), "3");
+        assert!(!node.mining && node.network.is_none());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn port_changes_preserve_settings_and_existing_listener_on_bind_failure() {
+        let directory =
+            std::env::temp_dir().join(format!("pixel-port-change-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let mut node = node();
+        node.config.data_dir = directory.clone();
+        let initial = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let old = initial.local_addr().unwrap();
+        drop(initial);
+        node.config.listen = Some(old);
+        node.set_online(true).await.unwrap();
+        let occupied = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let busy = std::num::NonZeroU16::new(occupied.local_addr().unwrap().port()).unwrap();
+        assert!(node.set_port(busy).await.is_err());
+        assert_eq!(node.config.listen, Some(old));
+        assert!(tokio::net::TcpStream::connect(old).await.is_ok());
+        assert!(!directory.join("settings.json").exists());
+        node.set_online(false).await.unwrap();
+        // Offline settings can be changed without trying to bind any socket.
+        node.set_port(busy).await.unwrap();
+        node.set_threads(MiningThreads::All).unwrap();
+        let saved = Settings::load(&directory).unwrap();
+        assert_eq!(saved.port, busy);
+        assert_eq!(saved.mining_threads, MiningThreads::All);
+        assert!(node.network.is_none() && !node.mining);
+        drop(occupied);
+        node.set_online(true).await.unwrap();
+        let next = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = next.local_addr().unwrap();
+        drop(next);
+        node.set_port(std::num::NonZeroU16::new(address.port()).unwrap())
+            .await
+            .unwrap();
+        assert!(tokio::net::TcpStream::connect(address).await.is_ok());
+        assert!(tokio::net::TcpStream::connect(old).await.is_err());
+        assert_eq!(
+            Settings::load(&directory).unwrap().mining_threads,
+            MiningThreads::All
+        );
+        node.set_online(false).await.unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn unknown_parent_is_requested_before_pow_and_duplicate_waiting_blocks_are_ignored() {
+        let mut node = node();
+        let block = Block {
+            previous: crate::protocol::Bytes([42; 32]),
+            height: 2,
+            ..genesis()
+        };
+        let hash = block.hash();
+        node.accept(block.clone());
+        assert!(node.sync.waiting.contains_key(&hash));
+        assert!(node.sync.wanted.contains(&block.previous));
+        node.sync.wanted.clear();
+        node.accept(block);
+        assert!(node.sync.wanted.is_empty());
+        assert_eq!(node.sync.waiting.len(), 1);
     }
 
     #[test]
@@ -762,12 +1068,13 @@ mod tests {
     #[test]
     fn rejected_handshake_cancels_session_and_prehello_messages_are_ignored() {
         let mut node = node();
-        let (sender, mut messages) = mpsc::channel(16);
+        let (sender, mut messages) = peer::outbox(false, 1);
         let (close, mut closed) = tokio::sync::oneshot::channel();
         node.peers.insert(
             1,
             Connection {
                 sender,
+                address: "127.0.0.1:1".parse().unwrap(),
                 ready: false,
                 _close: close,
                 identity: None,

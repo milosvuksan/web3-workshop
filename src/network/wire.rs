@@ -1,12 +1,12 @@
 use crate::protocol::{Block, Hash, PublicKey, Transaction};
 use serde::{Deserialize, Serialize};
-pub const VERSION: u32 = 1;
+pub const VERSION: u64 = 1;
 pub const MAX_LINE: usize = 262_144;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Message {
     Hello {
-        version: u32,
+        version: u64,
         genesis: Hash,
         identity: PublicKey,
     },

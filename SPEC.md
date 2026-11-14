@@ -190,7 +190,7 @@ Za svaki blok osim genesis-a, ovim redom:
 
 - Adrese se zadaju eksplicitno kroz `--peers` (ponovljeno ili razdvojeno zarezima). Svaki čvor navodi sve ostale; duplikati se spajaju.
 - Istovremene dolazne i odlazne sesije se obe zadržavaju (obično dve TCP sesije po paru). Deduplikacija blokova i transakcija sprečava petlje.
-- Nema automatskog otkrivanja čvorova.
+- Opciono UDP otkrivanje (`--discover`, port 7000) opisano je u `NETWORK.md`; nije deo konsenzusa. Bez njega se koriste eksplicitni `--peers`.
 
 **Prosleđivanje i sustizanje:**
 
@@ -220,7 +220,7 @@ Ovo je prototip u Rust-u; drugi čvorovi ne moraju da ga prate, ali je korisno z
 
 | Podešavanje | Podrazumevano |
 | --- | --- |
-| Adresa za slušanje | `127.0.0.1:7001`; za radionicu je potrebna LAN adresa |
+| Adresa za slušanje | `0.0.0.0:7001`; port se čuva u settings.json, `--port` ili `--listen` ga privremeno menjaju |
 | Folder sa podacima | `data/node`; poseban folder za svaki pokrenut proces |
 | Identitet | `identity.seed` u folderu sa podacima, pravi se automatski; `--key PATH` učitava postojeći |
 | Seed fajl | 64 hex znaka mala slova, najviše jedan `\n` na kraju; privatni bajtovi se nikad ne ispisuju |

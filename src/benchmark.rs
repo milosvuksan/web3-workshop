@@ -258,7 +258,8 @@ mod tests {
         else {
             panic!("expected node command");
         };
-        assert_eq!(config.listen.to_string(), "127.0.0.1:7001");
+        assert!(config.listen.is_none() && config.port.is_none());
+        assert_eq!(baneworkshop::settings::DEFAULT_PORT.get(), 7001);
         assert!(config.peers.is_empty());
         assert_eq!(config.data_dir.to_str(), Some("data/node"));
         assert!(config.key.is_none());

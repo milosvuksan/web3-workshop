@@ -1,10 +1,80 @@
 use baneworkshop::{
+    crypto,
     network::{
         lag::Lag,
         wire::{Framer, MAX_LINE, Message},
     },
     protocol::Bytes,
 };
+#[test]
+fn network_document_genesis_and_signed_paint_examples() {
+    let genesis = br#"{"type":"block","block":{"previous":"0000000000000000000000000000000000000000000000000000000000000000","height":0,"miner":"0000000000000000000000000000000000000000000000000000000000000000","timestamp":0,"nonce":0,"transactions":[]}}
+"#;
+    let Message::Block { block } = Framer::default().push(genesis).unwrap().remove(0) else {
+        panic!("genesis");
+    };
+    assert_eq!(
+        block.hash().to_string(),
+        "56ecd78b0620f10bcb47263b61ca4e5fbbfeaea4a6860ed24cc2b19d36f2e1ce"
+    );
+    let paint = br#"{"type":"transaction","transaction":{"parcel":181,"counter":0,"sender":"8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c","action":{"type":"paint","color":"ff8000"},"signature":"f6e77abad4b93a31784bfaa4824108e5335f8f027e8df9fbfd20d55a8d0434bbc2017053a5345f0f76947ead36d832728283994276d9ca85380f4225acc3560a"}}
+"#;
+    let Message::Transaction { transaction } = Framer::default().push(paint).unwrap().remove(0)
+    else {
+        panic!("transaction");
+    };
+    crypto::verify(&transaction).unwrap();
+    assert_eq!(
+        transaction.id().to_string(),
+        "f9b61b328fa0214ae3b25c7f32c124831770317aab1419483d966134a77123cd"
+    );
+}
+
+#[test]
+fn wire_rejects_missing_extra_and_mistyped_fields_at_every_level() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/prototype-v1.json")).unwrap();
+    let block = serde_json::json!({"type":"block", "block":fixture["two"]["block"]});
+    for path in [
+        vec![],
+        vec!["block"],
+        vec!["block", "transactions", "0"],
+        vec!["block", "transactions", "0", "action"],
+    ] {
+        for extra in [true, false] {
+            let mut bad = block.clone();
+            let mut object = &mut bad;
+            for key in &path {
+                object = if *key == "0" {
+                    &mut object[0]
+                } else {
+                    &mut object[*key]
+                };
+            }
+            let object = object.as_object_mut().unwrap();
+            if extra {
+                object.insert("unexpected".into(), true.into());
+            } else {
+                let field = object.keys().next().unwrap().clone();
+                object.remove(&field);
+            }
+            let mut line = serde_json::to_vec(&bad).unwrap();
+            line.push(b'\n');
+            assert!(Framer::default().push(&line).is_err());
+        }
+    }
+    for height in ["-1", "1.5", "1.0", "18446744073709551616", "\"1\""] {
+        let line = format!(
+            "{{\"type\":\"tip\",\"hash\":\"{}\",\"height\":{height}}}\n",
+            Bytes([0; 32])
+        );
+        assert!(Framer::default().push(line.as_bytes()).is_err());
+    }
+    let mut line = serde_json::to_vec(&block).unwrap();
+    line.extend(vec![b' '; MAX_LINE - line.len()]);
+    line.push(b'\n');
+    assert_eq!(Framer::default().push(&line).unwrap().len(), 1);
+}
 #[test]
 fn partial_reads_coalescing_and_bounds() {
     let mut f = Framer::default();

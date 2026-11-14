@@ -1,0 +1,11 @@
+/c-evp
+/cpp-evp
+/c-lowlevel
+/*.class
+/__pycache__/
+/go-hash
+/.cache/
+/.dotnet-home/
+/csharp/bin/
+/csharp/obj/
+/rust/target/

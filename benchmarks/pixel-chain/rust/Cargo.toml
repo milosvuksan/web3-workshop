@@ -1,0 +1,11 @@
+[package]
+name = "pixel-chain-hash-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sha2 = "=0.11.1"
+
+[profile.release]
+lto = true
+codegen-units = 1

@@ -1,0 +1,528 @@
+{
+  "metadata": {
+    "platform": "Linux-7.3.3-300.fc45.x86_64-x86_64-with-glibc2.44",
+    "cpu_affinity": 0,
+    "versions": {
+      "gcc": "16.2.1",
+      "g++": "16.2.1",
+      "python": "Python 3.15.2",
+      "node": "v24.18.0",
+      "openssl": "OpenSSL 4.0.3 29 Sep 2026 (Library: OpenSSL 4.0.3 29 Sep 2026)",
+      "java": "openjdk 25.0.4.1 2026-08-18\nOpenJDK Runtime Environment (Red_Hat-25.0.4.1.1-1) (build 25.0.4.1+1)\nOpenJDK 64-Bit Server VM (Red_Hat-25.0.4.1.1-1) (build 25.0.4.1+1, mixed mode, sharing)",
+      "go": "go version go1.27.3-X:nodwarf5 linux/amd64",
+      "dotnet": "10.0.113",
+      "rustc": "rustc 1.100.0 (0ef1bc386 2026-11-09)",
+      "cargo": "cargo 1.100.0 (3acc79c0c 2026-11-05)"
+    },
+    "dotnet_tiered_compilation": false,
+    "rust_flags": "-C target-cpu=native"
+  },
+  "results": [
+    {
+      "language": "C / OpenSSL EVP",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.105835527,
+          "hashes_per_second": 9448623.05,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.105236175,
+          "hashes_per_second": 9502435.83,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.104145301,
+          "hashes_per_second": 9601969.46,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 9502435.83
+    },
+    {
+      "language": "C++ / OpenSSL EVP",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.103010396,
+          "hashes_per_second": 9707758.04,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.102746151,
+          "hashes_per_second": 9732724.68,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.102930937,
+          "hashes_per_second": 9715252.08,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 9715252.08
+    },
+    {
+      "language": "C / OpenSSL low-level (deprecated API)",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.097818874,
+          "hashes_per_second": 10222975.99,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.097830886,
+          "hashes_per_second": 10221720.78,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.097985676,
+          "hashes_per_second": 10205573.31,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 10221720.78
+    },
+    {
+      "language": "Java / MessageDigest",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.131673967,
+          "hashes_per_second": 7594515.63,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.133867184,
+          "hashes_per_second": 7470090.65,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.129285053,
+          "hashes_per_second": 7734846.19,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 7594515.63
+    },
+    {
+      "language": "Python / hashlib",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.41581037400101195,
+          "hashes_per_second": 2404942.402898217,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.41362070299874176,
+          "hashes_per_second": 2417673.9528510543,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.4064622859987139,
+          "hashes_per_second": 2460252.856037827,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 2417673.9528510543
+    },
+    {
+      "language": "Node.js / crypto.createHash",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 1.037479355,
+          "hashes_per_second": 963874.6016300246,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 1.234764368,
+          "hashes_per_second": 809871.1186651281,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 1.055582709,
+          "hashes_per_second": 947344.0512750952,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 947344.0512750952
+    },
+    {
+      "language": "Node.js / crypto.hash (one-shot)",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.866707145,
+          "hashes_per_second": 1153792.2650908802,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.754247553,
+          "hashes_per_second": 1325824.652691979,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.764117397,
+          "hashes_per_second": 1308699.4275043316,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 1308699.4275043316
+    },
+    {
+      "language": "Go / crypto/sha256",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667",
+          "hashes_per_second": 8335170.891216059,
+          "seconds": 0.119973545
+        },
+        {
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667",
+          "hashes_per_second": 8472096.818715785,
+          "seconds": 0.118034534
+        },
+        {
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667",
+          "hashes_per_second": 8427832.86747785,
+          "seconds": 0.118654465
+        }
+      ],
+      "median_hps": 8427832.86747785
+    },
+    {
+      "language": "C# / SHA256.HashData",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.3647876,
+          "hashes_per_second": 2741321.251051297,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.4314644,
+          "hashes_per_second": 2317688.319128994,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.4344274,
+          "hashes_per_second": 2301880.590404749,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 2317688.319128994
+    },
+    {
+      "language": "C# / IncrementalHash (reused)",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.3465363,
+          "hashes_per_second": 2885700.5745141273,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.3433433,
+          "hashes_per_second": 2912536.8108246177,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.3427533,
+          "hashes_per_second": 2917550.319719752,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 2912536.8108246177
+    },
+    {
+      "language": "Rust / RustCrypto sha2",
+      "size": 128,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.101512321,
+          "hashes_per_second": 9851020.941585997,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.101509215,
+          "hashes_per_second": 9851322.365166552,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        },
+        {
+          "seconds": 0.103653581,
+          "hashes_per_second": 9647520.0408175,
+          "digest": "c2e5f6ef2100bfb4a08fe887a983c3f7b2af64bd689f676e5f527702f4718667"
+        }
+      ],
+      "median_hps": 9851020.941585997
+    },
+    {
+      "language": "C / OpenSSL EVP",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.487194891,
+          "hashes_per_second": 2052566.68,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.486066948,
+          "hashes_per_second": 2057329.77,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.484460911,
+          "hashes_per_second": 2064150.02,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 2057329.77
+    },
+    {
+      "language": "C++ / OpenSSL EVP",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.485445595,
+          "hashes_per_second": 2059963.07,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.485055584,
+          "hashes_per_second": 2061619.4,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.484139699,
+          "hashes_per_second": 2065519.52,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 2061619.4
+    },
+    {
+      "language": "C / OpenSSL low-level (deprecated API)",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.479376589,
+          "hashes_per_second": 2086042.63,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.480643802,
+          "hashes_per_second": 2080542.8,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.479358656,
+          "hashes_per_second": 2086120.67,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 2086042.63
+    },
+    {
+      "language": "Java / MessageDigest",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.504749437,
+          "hashes_per_second": 1981181.01,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.51415921,
+          "hashes_per_second": 1944922.86,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.504263527,
+          "hashes_per_second": 1983090.08,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 1981181.01
+    },
+    {
+      "language": "Python / hashlib",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.8154179820012359,
+          "hashes_per_second": 1226364.9098659249,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.8227231029995892,
+          "hashes_per_second": 1215475.7735063864,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.8006732079993526,
+          "hashes_per_second": 1248948.9969306036,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 1226364.9098659249
+    },
+    {
+      "language": "Node.js / crypto.createHash",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 2.209421941,
+          "hashes_per_second": 452607.0740238023,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 1.486550248,
+          "hashes_per_second": 672698.4179279489,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 1.439852874,
+          "hashes_per_second": 694515.4036619994,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 672698.4179279489
+    },
+    {
+      "language": "Node.js / crypto.hash (one-shot)",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 1.347174357,
+          "hashes_per_second": 742294.4140852585,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 1.167798134,
+          "hashes_per_second": 856312.380440916,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 1.161955803,
+          "hashes_per_second": 860617.9317820405,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 856312.380440916
+    },
+    {
+      "language": "Go / crypto/sha256",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c",
+          "hashes_per_second": 1996774.1514550997,
+          "seconds": 0.500807765
+        },
+        {
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c",
+          "hashes_per_second": 2006160.8920131198,
+          "seconds": 0.498464507
+        },
+        {
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c",
+          "hashes_per_second": 2001884.8145906334,
+          "seconds": 0.49952924
+        }
+      ],
+      "median_hps": 2001884.8145906334
+    },
+    {
+      "language": "C# / SHA256.HashData",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.8112765,
+          "hashes_per_second": 1232625.3749492313,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.8161649,
+          "hashes_per_second": 1225242.5949706978,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.8154261,
+          "hashes_per_second": 1226352.7007536304,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 1226352.7007536304
+    },
+    {
+      "language": "C# / IncrementalHash (reused)",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.7304519,
+          "hashes_per_second": 1369015.5368204257,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.7300086,
+          "hashes_per_second": 1369846.8757765319,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.7273811,
+          "hashes_per_second": 1374795.1383394483,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 1369846.8757765319
+    },
+    {
+      "language": "Rust / RustCrypto sha2",
+      "size": 1024,
+      "iterations": 1000000,
+      "samples": [
+        {
+          "seconds": 0.480343911,
+          "hashes_per_second": 2081841.7327663386,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.482360557,
+          "hashes_per_second": 2073137.999133706,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        },
+        {
+          "seconds": 0.482288723,
+          "hashes_per_second": 2073446.7805501644,
+          "digest": "dd9f583df93b3df18dfd71cc7bdcafac7058e260c208c78f8d7ee87145ef968c"
+        }
+      ],
+      "median_hps": 2073446.7805501644
+    }
+  ]
+}

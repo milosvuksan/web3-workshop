@@ -1,0 +1,521 @@
+{
+  "benchmark": "live_single_node_block_intervals",
+  "started_at_utc": "2026-11-14T12:50:07.318244+00:00",
+  "difficulty_bits": 23,
+  "mining_workers": 1,
+  "peers": 0,
+  "lag_enabled": true,
+  "transactions_per_block": 0,
+  "warmup_blocks": 5,
+  "sample_count": 100,
+  "elapsed_seconds": 45.93310893099988,
+  "mean_seconds": 0.4593310893099988,
+  "median_seconds": 0.32018758449976303,
+  "p95_seconds": 1.3471087649995752,
+  "min_seconds": 0.0032217009993473766,
+  "max_seconds": 2.2861848840002494,
+  "final_observed_tip": "000001cbac454c44726d2b2f9b2b7bf7b7adda44efef6e4e20d3f5f169b40bf6",
+  "timing_scope": "monotonic timestamps of stderr tip notifications; includes worker replacement, candidate construction, proof of work, validation, coordinator scheduling and normal exports; excludes startup/warmup; no peer propagation",
+  "samples": [
+    {
+      "height": 6,
+      "tip": "0000005f47c752005d0236a8c83a8b9d837a8a8b39893cff2461ebaf4a7059f7",
+      "seconds": 0.17618118400059757
+    },
+    {
+      "height": 7,
+      "tip": "000000b69106c67b00e3f6a0a0b29f6742ab5170cfcaabaf3ab433197465ed49",
+      "seconds": 0.28056162199936807
+    },
+    {
+      "height": 8,
+      "tip": "00000192fb7480dfb33fcb4e725bbdbdc94c89793b1f58bc19d6793ad4a99b96",
+      "seconds": 0.4646098630000779
+    },
+    {
+      "height": 9,
+      "tip": "000000c1ee4fc00be84aa003f8c21a4646884d1ca5d5395c0346780538feb694",
+      "seconds": 2.2861848840002494
+    },
+    {
+      "height": 10,
+      "tip": "0000019b8fa2474da0143ebf4cf903ec31319496424b9b97fc2edb35e8c96c1d",
+      "seconds": 0.16096779299914488
+    },
+    {
+      "height": 11,
+      "tip": "0000015b0abf800bcbaea5429467ce998a215a710357c93fb30a5ed67c41e493",
+      "seconds": 0.21019373800118046
+    },
+    {
+      "height": 12,
+      "tip": "000001254883c8374a64bdfa4619652777fdb48e0dcbbc4531954e800163fd7a",
+      "seconds": 1.0705927879989758
+    },
+    {
+      "height": 13,
+      "tip": "000001b37f7c024c2a243c32c5f7298aa37cb91bdf5f742550628982365abab9",
+      "seconds": 0.09984285300015472
+    },
+    {
+      "height": 14,
+      "tip": "000001cba193f6f4b8343666b1a1db650c97c338a2b24ba78848711a7378f53c",
+      "seconds": 0.7945236960003967
+    },
+    {
+      "height": 15,
+      "tip": "00000019d7f571ae95d8cf80bb520b473e2d0e15c5d5de919765457e55cee916",
+      "seconds": 2.1311012860005576
+    },
+    {
+      "height": 16,
+      "tip": "0000016b0e34b59c073fa8dbc0085fba0ce22d0d9f0de99f1af9b483c5d7a90e",
+      "seconds": 0.745767029999115
+    },
+    {
+      "height": 17,
+      "tip": "000000da9a6447b2fe57193c41f26840774f62ab1804aa8a3d3cb4ee2928d06d",
+      "seconds": 0.036027787000421085
+    },
+    {
+      "height": 18,
+      "tip": "0000001119c6b2d1ecead0cb61775b3919c985526925ba1ee040de256b18fb56",
+      "seconds": 0.6582641280001553
+    },
+    {
+      "height": 19,
+      "tip": "000000b75b5270b4f865549144e609d927c542b18e3277fa293ca84445c5e524",
+      "seconds": 0.4459472359994834
+    },
+    {
+      "height": 20,
+      "tip": "00000193a760f8f2ff9febce5653ffb2412f861f8b584770e7855df51115559f",
+      "seconds": 0.8157791770008771
+    },
+    {
+      "height": 21,
+      "tip": "0000014db0c3ecc073891f09570c5f4851765e64dc6a5899556a64da0976f006",
+      "seconds": 1.8661911859999236
+    },
+    {
+      "height": 22,
+      "tip": "000000b2360dc391e0b911f2772bb276fc3eea828ad5f0eafd15172bc85b098f",
+      "seconds": 0.1880520169997908
+    },
+    {
+      "height": 23,
+      "tip": "000001ee02c2872acc1414d989c202199e201ea8e4f1b7cd3fd8ad87de27d24e",
+      "seconds": 0.11251769099908415
+    },
+    {
+      "height": 24,
+      "tip": "000000ea6817f5475f9625466697c2d5ed6dce0ea738cfe8fcce3f3543372f8a",
+      "seconds": 0.06654137999976228
+    },
+    {
+      "height": 25,
+      "tip": "0000014bd77c4772b9c323b03e3e7cf5b4ae43995ad6fcdb082c047f14809a56",
+      "seconds": 1.0221973879997677
+    },
+    {
+      "height": 26,
+      "tip": "0000005499c5ca102f41d7e850b6d05c96cb7293bc329902bf63e435a98ba32c",
+      "seconds": 0.2990111100007198
+    },
+    {
+      "height": 27,
+      "tip": "0000015f7783eed2fc6b309731cc17e03a2fd1a431ac33b00241036e378703dc",
+      "seconds": 0.012946586999532883
+    },
+    {
+      "height": 28,
+      "tip": "000001fee2fdefdbd9e285c5bf2eef8028783fe92eae742c21891c2ae873fea3",
+      "seconds": 0.3269971030003944
+    },
+    {
+      "height": 29,
+      "tip": "000001c84363936bec855cc47b6202a4a3516be36eeede548d13c168b3aea888",
+      "seconds": 0.0606190130001778
+    },
+    {
+      "height": 30,
+      "tip": "0000010f7fa0d5b7e3013a9e9944fe744ecf9d01c8bef69a1cf717bf83b26e09",
+      "seconds": 0.33339877700018405
+    },
+    {
+      "height": 31,
+      "tip": "0000014aa4ab727d59f834d335419115e00404fffd26c882ae0ab4fe000618f1",
+      "seconds": 0.17453501199997845
+    },
+    {
+      "height": 32,
+      "tip": "000000c8021c14477c45a373eb368f0af12b793d678d69ca38c719e26cd292c4",
+      "seconds": 0.15460935999908543
+    },
+    {
+      "height": 33,
+      "tip": "00000045c654e8047c242624447c609d2770a57d08c2abb7cf46fe79dec3157a",
+      "seconds": 0.3780389460007427
+    },
+    {
+      "height": 34,
+      "tip": "00000116127fb1b78b49914ebf13595dcb8d9bd8b74a06ada22c165af1d1bc6a",
+      "seconds": 0.34555037599966454
+    },
+    {
+      "height": 35,
+      "tip": "000000f6e0d259a8ecbec296d63dd18479b3852143191ad4088a733e1627d922",
+      "seconds": 0.28703018099986366
+    },
+    {
+      "height": 36,
+      "tip": "000000f2cf5de10235547fac018879fa0563ea19607aab48f44c6d69840cd09c",
+      "seconds": 0.10328653000033228
+    },
+    {
+      "height": 37,
+      "tip": "0000008536683dc92be0b2e104e8d97260b85ad5f809838c1c57cee453b502c7",
+      "seconds": 0.00817350100078329
+    },
+    {
+      "height": 38,
+      "tip": "0000001403ddbb032c74416e109122e543b3b0488fcb46c2d417453f7068360e",
+      "seconds": 1.3471087649995752
+    },
+    {
+      "height": 39,
+      "tip": "000001018fd6524a32247cffd832445981369108db560bcdc20f551eaf7ad687",
+      "seconds": 0.6994231520002359
+    },
+    {
+      "height": 40,
+      "tip": "000001536b2c1ee06de48dcb49ecd32f25193b76592090709c2255d7021167c4",
+      "seconds": 0.6254436950002855
+    },
+    {
+      "height": 41,
+      "tip": "0000017e5f26da664f84e67612a1e545bfafff19c0b9d52a2f8d4ca9e4cd2ab2",
+      "seconds": 0.193802642999799
+    },
+    {
+      "height": 42,
+      "tip": "000000ef7def018cffc8e027b801db926d01badd8387796cee0c2e5b7a419d73",
+      "seconds": 0.5956343109992304
+    },
+    {
+      "height": 43,
+      "tip": "000000a6162dc2b1150140a59d08981f990dbd787f504fd00d63a88b3b1c9cc7",
+      "seconds": 1.027419063000707
+    },
+    {
+      "height": 44,
+      "tip": "000001fd7b8862b97f206ceb7813fa7c902260dc7bb89401bad880fb8ac849f4",
+      "seconds": 0.31337806599913165
+    },
+    {
+      "height": 45,
+      "tip": "000001f9b98e3160529268eeebc6a2aa6a9ed346113f8c84163db84a8a3e53e6",
+      "seconds": 0.10902363000059268
+    },
+    {
+      "height": 46,
+      "tip": "0000012a357247bfb169e15440612991e7c5a304947cef865e45a24edd378c93",
+      "seconds": 0.7777874349994818
+    },
+    {
+      "height": 47,
+      "tip": "000000308f3a20ccf17ea416ab2272179d45fffe830b7f9011c16fd65b270802",
+      "seconds": 0.8297825530007685
+    },
+    {
+      "height": 48,
+      "tip": "00000170f9395d5fe8560e431b0422845acf39acc86a41ab4cd8e1774ea42421",
+      "seconds": 0.5337351710004441
+    },
+    {
+      "height": 49,
+      "tip": "0000009830630aded76483c26ce312ad25a3a22d7ccc09882fdb237a7f9ea0ca",
+      "seconds": 0.10400564599876816
+    },
+    {
+      "height": 50,
+      "tip": "000001f419a873f2f7efd3986758953778e01933c96c1d65f1baa3f65ad3b1dd",
+      "seconds": 0.010495067999727326
+    },
+    {
+      "height": 51,
+      "tip": "000000d450ecb9575bf934691973bf72abaf241f78f86135d479f06e341ecb0e",
+      "seconds": 0.1921273560001282
+    },
+    {
+      "height": 52,
+      "tip": "0000006ee068486a0910997e260ef6ca84afafd75d47293da37d404b690bef01",
+      "seconds": 0.005656569999700878
+    },
+    {
+      "height": 53,
+      "tip": "00000168701ec2e2bc635a7033f84f020d7e6b534fd7de625ee47de39b976690",
+      "seconds": 0.04665345800094656
+    },
+    {
+      "height": 54,
+      "tip": "000000f3fbe1fe2674a299b509e2ddb800c06674cbdcb18625dbc1cc8218c250",
+      "seconds": 0.4048448789999384
+    },
+    {
+      "height": 55,
+      "tip": "00000040fc247647ccdb087679789a8c6f13bac5bc4be62afc5009ce9137cf14",
+      "seconds": 1.2704336040005728
+    },
+    {
+      "height": 56,
+      "tip": "000000cd81040a3fd553438c0576b1f89daceefb90a00e68254671168652924c",
+      "seconds": 0.0033117499988293275
+    },
+    {
+      "height": 57,
+      "tip": "0000012dd94c3762d189cd0f0f200d8a6924545317322a35708a58d2c36879d0",
+      "seconds": 0.14726375800091773
+    },
+    {
+      "height": 58,
+      "tip": "00000049d5fe064fc1ae78171e25d9cea9d19711845ba86c3eee9a71421dec97",
+      "seconds": 0.1337074909988587
+    },
+    {
+      "height": 59,
+      "tip": "000001ad0205d4faca7130aefcd9f308a44560e46341f772395fd88aa27c3878",
+      "seconds": 0.16497640700072225
+    },
+    {
+      "height": 60,
+      "tip": "000000e25e2e1278c61b1578dbdca807a3ac6b766f07ef3f0ad31004673fa8f4",
+      "seconds": 0.09034898999925645
+    },
+    {
+      "height": 61,
+      "tip": "00000067c3f34235bf85c3943478548a95b25df633d900bd896508def6b86516",
+      "seconds": 0.1541228800015233
+    },
+    {
+      "height": 62,
+      "tip": "0000000627d99e8a9239664b213e26498fd5c545ba78101deb638096f4acd74d",
+      "seconds": 0.32887347399991995
+    },
+    {
+      "height": 63,
+      "tip": "000001afe3ccd6ca73dd168e455fe4c14e8583d104fccfb69d1165e9a72ac344",
+      "seconds": 0.8569396139992023
+    },
+    {
+      "height": 64,
+      "tip": "000001c5251ab1707b541fa717af9f5a9670cf5151cc7161903679bb28385695",
+      "seconds": 0.636053358000936
+    },
+    {
+      "height": 65,
+      "tip": "0000010e3abd5ad6f43d802e2c46cc7e518b63b60c7af22b98babb73d5825647",
+      "seconds": 0.7974102899988793
+    },
+    {
+      "height": 66,
+      "tip": "0000009e9bb42115846951dcf9d6c42a1dcb78c159da54de56da0d0e96adab0f",
+      "seconds": 0.4461841390002519
+    },
+    {
+      "height": 67,
+      "tip": "00000162f8e3a34515dbb06969f9401d2d825e7d682f378c656579e5f7672a58",
+      "seconds": 0.04210349999993923
+    },
+    {
+      "height": 68,
+      "tip": "000000399a77107c90d72d42379c2bc35d727d5609820d7f231d900fa87d2bf5",
+      "seconds": 0.38427563200093573
+    },
+    {
+      "height": 69,
+      "tip": "000001ebc5c66530dbe817849a18939fd6b59848ff331880447a4503fd6455c6",
+      "seconds": 0.8990906129984069
+    },
+    {
+      "height": 70,
+      "tip": "000001d1ab214f5a5d193e096c71d2ae8f6c13f4bc1f849c7e35ddf796e8d9ca",
+      "seconds": 0.3354348690008919
+    },
+    {
+      "height": 71,
+      "tip": "000001a4c2fc53b94e02f84f2a6dcad453062343cfe76b080da5930657718f3d",
+      "seconds": 0.08040837999942596
+    },
+    {
+      "height": 72,
+      "tip": "0000019c170ceb29c6e08e3241d6551f156e134c5d77eed17f6335ca106b2027",
+      "seconds": 0.7870456370001193
+    },
+    {
+      "height": 73,
+      "tip": "000001bd891a5eaa60a1a83a5aa03b7f7d9c5de4cdcebc26f0994e5788ebd4e1",
+      "seconds": 0.03170029499960947
+    },
+    {
+      "height": 74,
+      "tip": "000000ebd1d46b5150b030319ec414f8e1d2eb7c31c246a849a4d6ddf2545186",
+      "seconds": 0.8600614970000606
+    },
+    {
+      "height": 75,
+      "tip": "00000118e91a2bf75496d4de98e3e70f838fd97c551d8c09cf8fd81ac1edd928",
+      "seconds": 0.0413769710012275
+    },
+    {
+      "height": 76,
+      "tip": "00000076bcfd1f8eaf10fa8c2fe3a8cc4c1d62d097c4271eb92e8c69b25f3b6a",
+      "seconds": 0.24205412300034368
+    },
+    {
+      "height": 77,
+      "tip": "000000dd8b49315ce636c4b2373586cdc09579dabea99e41efe5f51e21235c93",
+      "seconds": 0.03682203399876016
+    },
+    {
+      "height": 78,
+      "tip": "0000007dfab60c8df134b64788112eab8043ea9fc9b0e0571c74cd73fd9423ed",
+      "seconds": 0.7610860479999246
+    },
+    {
+      "height": 79,
+      "tip": "0000004b72335a9e309a3088e3eff4596d2a9041901243b59fff4602637c0381",
+      "seconds": 0.9578122940001776
+    },
+    {
+      "height": 80,
+      "tip": "000000196a09dc4a0d47ad584f8715348db8099aa49c82f77a770f69f8685228",
+      "seconds": 0.3027768499996455
+    },
+    {
+      "height": 81,
+      "tip": "00000178bbde860e205ffcdd0e56459e3065be075a3a6cf4233d99f8c8259875",
+      "seconds": 1.3237010949997057
+    },
+    {
+      "height": 82,
+      "tip": "0000013d6cea8e2abaf7af27ab4f3ffe1ebaf91ac6fd38ed0439480ac47f12ef",
+      "seconds": 0.22161890600000334
+    },
+    {
+      "height": 83,
+      "tip": "000001710207836febfcfdce709eaec0237d5a68095559d17268bbb1b3a30c93",
+      "seconds": 0.0602574070016999
+    },
+    {
+      "height": 84,
+      "tip": "000001a00aa68c903f18207f1c058d460d3c2bdd55ce6b7d69517a5eb3d4865f",
+      "seconds": 0.0032217009993473766
+    },
+    {
+      "height": 85,
+      "tip": "0000002f8f5582437576838a47c46e82ef675414c3e0596f967e758e39dbfc8a",
+      "seconds": 0.3581236629997875
+    },
+    {
+      "height": 86,
+      "tip": "000000243c68a4f8878dd5d61ece720db6982e62a6eb04b56183611b222bece7",
+      "seconds": 0.2328705109994189
+    },
+    {
+      "height": 87,
+      "tip": "000001b5ccb7ba197a9056f300ad99f060cef7e6cbe01484b495cc36cd2ccaa0",
+      "seconds": 1.0936693280000327
+    },
+    {
+      "height": 88,
+      "tip": "000000f2384f515d6dbafb4137f955f11e344b4f8792aa29f1a55ccd030a9093",
+      "seconds": 0.25405646200124465
+    },
+    {
+      "height": 89,
+      "tip": "000001adbdd5b7a5a5ac3249cf3a268c002af07073a137579feff24375715b0a",
+      "seconds": 0.4588543390000268
+    },
+    {
+      "height": 90,
+      "tip": "0000000f2c43974e293eed03eb1063f238b2b40e6e700a57ef9cddebe31869b4",
+      "seconds": 0.4480968699990626
+    },
+    {
+      "height": 91,
+      "tip": "0000001c9d3774c104ebf7fe77bbcb3469f2167d9e429716f5d74e051e803e51",
+      "seconds": 0.3962793230002717
+    },
+    {
+      "height": 92,
+      "tip": "00000177cde1413358a117e0c67ca5e5784430caf8c43f93b5c93d27d4ebff81",
+      "seconds": 1.3788213839998207
+    },
+    {
+      "height": 93,
+      "tip": "000000964faff6d0a908ec0a18ddb3e2fa390933a90d2cf930f63d5ed24a75ed",
+      "seconds": 0.3541939469996578
+    },
+    {
+      "height": 94,
+      "tip": "00000041d47e18e772b16a6bd2d3ba12a8a4c826987897eb388eac58cf520ad6",
+      "seconds": 1.7755172870001843
+    },
+    {
+      "height": 95,
+      "tip": "00000048138d62a1ced7515f8ea888723d2b44f6bf6548af4b70a6cad2968f6d",
+      "seconds": 0.04736073300045973
+    },
+    {
+      "height": 96,
+      "tip": "0000001ed68be3209666c604b1f17f9ac4715c217322780fb9a2817eafbc3d17",
+      "seconds": 0.3788235550000536
+    },
+    {
+      "height": 97,
+      "tip": "000000a155fe25f4703648dec327b83a573123ccd01f3f5a4977c2d1041ebe2e",
+      "seconds": 0.19392440099909436
+    },
+    {
+      "height": 98,
+      "tip": "000000d8d2c31a66ae64bc57835f4c36966fa95fe8781c409012316182a747eb",
+      "seconds": 0.12012498200056143
+    },
+    {
+      "height": 99,
+      "tip": "00000084645ef5dad838457dc01d3a04bfb20a7027b82a1856e8bd64771ac230",
+      "seconds": 0.3273035060010443
+    },
+    {
+      "height": 100,
+      "tip": "0000000d0d62e2a5519016f01679a75c7f23620073173bee1d70891e3aa7f560",
+      "seconds": 0.0701071259991295
+    },
+    {
+      "height": 101,
+      "tip": "0000002456b3f75c9f6894d4750cb79dd8a9b3846dad62351c48dac20eaca540",
+      "seconds": 0.10008956499950727
+    },
+    {
+      "height": 102,
+      "tip": "000001005e2cfc4d64d4790eabe5429bff62c420decd923aed5a989f97c179de",
+      "seconds": 0.2564914600006887
+    },
+    {
+      "height": 103,
+      "tip": "000001d0f053f6363da717391abfa985314bf3c2e5f38126a0dbf274631f3b05",
+      "seconds": 0.7740976009990845
+    },
+    {
+      "height": 104,
+      "tip": "00000176b50227a31f3ee4e919fa10d109c13dfab8527dcb2645b04835d195b8",
+      "seconds": 0.162340689001212
+    },
+    {
+      "height": 105,
+      "tip": "000001cbac454c44726d2b2f9b2b7bf7b7adda44efef6e4e20d3f5f169b40bf6",
+      "seconds": 0.4189259079994372
+    }
+  ]
+}

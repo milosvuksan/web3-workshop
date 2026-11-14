@@ -77,6 +77,7 @@ pub fn load_key(path: &Path) -> Result<SigningKey> {
         return Err(Error::Invalid("key file too long"));
     }
     let text = fs::read_to_string(path)?;
-    let seed: Bytes<32> = text.trim().parse()?;
+    // The seed format permits one trailing LF, not arbitrary whitespace.
+    let seed: Bytes<32> = text.strip_suffix('\n').unwrap_or(&text).parse()?;
     Ok(SigningKey::from_bytes(&seed.0))
 }

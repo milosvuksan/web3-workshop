@@ -18,7 +18,10 @@ use serde_json::json;
 use std::{
     collections::BTreeMap,
     path::Path,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
@@ -34,6 +37,7 @@ pub fn now() -> u64 {
 struct Connection {
     sender: mpsc::Sender<Message>,
     ready: bool,
+    _close: tokio::sync::oneshot::Sender<()>,
 }
 pub struct Node {
     config: Config,
@@ -46,6 +50,7 @@ pub struct Node {
     mining: bool,
     generation: u64,
     job: Option<Job>,
+    mining_result_pending: Arc<AtomicBool>,
     announcement_cursor: usize,
     request_cursor: usize,
 }
@@ -105,10 +110,14 @@ impl Node {
         let worker_cancel = cancel.clone();
         let events = self.events.clone();
         let generation = self.generation;
+        let pending = Arc::new(AtomicBool::new(false));
+        self.mining_result_pending = pending.clone();
         let handle = std::thread::spawn(move || {
             if let Some(block) = mining::mine(block, &worker_cancel) {
                 // Never block shutdown on a full coordinator queue.
-                let _ = events.try_send(Event::Mined { generation, block });
+                if events.try_send(Event::Mined { generation, block }).is_ok() {
+                    pending.store(true, Ordering::Release);
+                }
             }
         });
         self.job = Some(Job { cancel, handle });
@@ -140,8 +149,8 @@ impl Node {
                     && crate::protocol::validation::valid_pow(hash)
                 {
                     self.sync.wanted.remove(&hash);
-                    self.sync.want(parent);
                     self.sync.defer(block);
+                    self.sync.want_parent(parent);
                 }
             }
             Err(Error::Future) => {
@@ -154,6 +163,13 @@ impl Node {
                 self.sync.wanted.remove(&hash);
                 eprintln!("rejected block {hash}: {error}");
             }
+        }
+    }
+    fn mined(&mut self, generation: u64, block: Block) {
+        if generation == self.generation && self.mining && block.previous == self.chain.tip {
+            self.mining_result_pending.store(false, Ordering::Release);
+            self.accept(block);
+            self.retry_waiting();
         }
     }
     fn retry_waiting(&mut self) {
@@ -271,7 +287,7 @@ impl Node {
             .map(|b| b.previous)
             .collect();
         for hash in missing {
-            self.sync.want(hash);
+            self.sync.want_parent(hash);
         }
         let requests: Vec<_> = self.sync.wanted.iter().copied().collect();
         let len = requests.len();
@@ -299,10 +315,16 @@ impl Node {
         for transaction in transactions {
             self.broadcast(Message::Transaction { transaction });
         }
-        if self.mining && self.job.as_ref().is_none_or(|job| job.handle.is_finished()) {
+        self.maintain_miner();
+        self.export()
+    }
+    fn maintain_miner(&mut self) {
+        if self.mining
+            && self.job.as_ref().is_none_or(|job| job.handle.is_finished())
+            && !self.mining_result_pending.load(Ordering::Acquire)
+        {
             self.restart_miner();
         }
-        self.export()
     }
     fn status(&self) -> serde_json::Value {
         let identity = crypto::public_key(&self.key);
@@ -376,7 +398,7 @@ pub async fn run(config: Config) -> Result<()> {
         None => crypto::load_or_create_key(&config.data_dir.join("identity.seed"))?,
     };
     let (events, mut receiver) = mpsc::channel(1024);
-    peer::start(
+    let _network = peer::start(
         config.listen,
         config.peers.clone(),
         events.clone(),
@@ -395,6 +417,7 @@ pub async fn run(config: Config) -> Result<()> {
         events,
         generation: 0,
         job: None,
+        mining_result_pending: Arc::new(AtomicBool::new(false)),
         announcement_cursor: 0,
         request_cursor: 0,
     };
@@ -424,26 +447,125 @@ pub async fn run(config: Config) -> Result<()> {
                     None => stdin_open = false,
                 },
                 Some(event) = receiver.recv() => match event {
-                    Event::Connected { id, sender } => {
-                        node.peers.insert(id, Connection { sender, ready: false });
+                    Event::Connected { id, sender, close } => {
+                        node.peers.insert(id, Connection { sender, ready: false, _close: close });
                         node.send(id, node.hello());
                     }
                     Event::Disconnected { id } => { node.peers.remove(&id); },
                     Event::Message { id, message } => node.message(id, message),
-                    Event::Mined { generation, block } => {
-                        if generation == node.generation && node.mining && block.previous == node.chain.tip {
-                            node.accept(block);
-                            node.retry_waiting();
-                        }
-                    }
+                    Event::Mined { generation, block } => node.mined(generation, block),
                 },
             }
         }
         Ok(())
-    }.await;
+    }
+    .await;
     if let Some(job) = node.job.take() {
         job.stop();
     }
     outcome?;
     node.export()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node() -> Node {
+        let (events, _) = mpsc::channel(16);
+        Node {
+            config: Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                peers: Vec::new(),
+                data_dir: std::path::PathBuf::new(),
+                key: None,
+                no_lag: true,
+                lag_seed: 1,
+                mine: false,
+            },
+            key: SigningKey::from_bytes(&[1; 32]),
+            chain: Chain::default(),
+            pool: Mempool::default(),
+            sync: Sync::default(),
+            peers: BTreeMap::new(),
+            events,
+            mining: false,
+            generation: 0,
+            job: None,
+            mining_result_pending: Arc::new(AtomicBool::new(false)),
+            announcement_cursor: 0,
+            request_cursor: 0,
+        }
+    }
+
+    #[test]
+    fn queued_mining_result_survives_periodic_worker_maintenance() {
+        let mut node = node();
+        node.mining = true;
+        node.generation = 42;
+        node.mining_result_pending.store(true, Ordering::Release);
+        node.job = Some(Job {
+            cancel: Arc::new(AtomicBool::new(false)),
+            handle: std::thread::spawn(|| {}),
+        });
+        while !node.job.as_ref().unwrap().handle.is_finished() {
+            std::thread::yield_now();
+        }
+        node.maintain_miner();
+        assert_eq!(
+            node.generation, 42,
+            "queued result must keep its generation"
+        );
+        // If result delivery failed, restarting is necessary for progress.
+        node.mining_result_pending.store(false, Ordering::Release);
+        node.maintain_miner();
+        assert_eq!(node.generation, 43);
+        node.job.take().unwrap().stop();
+    }
+
+    #[test]
+    fn stale_mining_result_cannot_extend_the_chain() {
+        let mut node = node();
+        let vectors: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let block: Block = serde_json::from_value(vectors["one"]["block"].clone()).unwrap();
+        node.mining = true;
+        node.generation = 2;
+        node.mined(1, block.clone());
+        assert_eq!(node.chain.tip, genesis().hash());
+        node.mining = false;
+        node.mined(2, block);
+        assert_eq!(node.chain.tip, genesis().hash());
+    }
+
+    #[test]
+    fn rejected_handshake_cancels_session_and_prehello_messages_are_ignored() {
+        let mut node = node();
+        let (sender, mut messages) = mpsc::channel(16);
+        let (close, mut closed) = tokio::sync::oneshot::channel();
+        node.peers.insert(
+            1,
+            Connection {
+                sender,
+                ready: false,
+                _close: close,
+            },
+        );
+        node.message(
+            1,
+            Message::Tip {
+                hash: crate::protocol::Bytes([9; 32]),
+                height: 10,
+            },
+        );
+        assert!(node.sync.wanted.is_empty());
+        assert!(messages.try_recv().is_err());
+        // An otherwise valid hello using our own identity must close promptly.
+        node.message(1, node.hello());
+        assert!(node.peers.is_empty());
+        assert!(matches!(
+            closed.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Closed)
+        ));
+    }
 }

@@ -69,6 +69,9 @@ fn fork_choice_reorganization_and_mempool() {
     assert_eq!(a.tip, block("two").hash().min(block("fork2").hash()));
     a.insert(block("three"), NOW).unwrap();
     let old = a.tip;
+    assert!(a.detached(old).is_empty());
+    assert!(a.detached(block("one").hash()).is_empty());
+    assert!(a.detached(Bytes([0xff; 32])).is_empty());
     let mut pool = Mempool::default();
     for name in ["fork3", "fork4"] {
         a.insert(block(name), NOW).unwrap();
@@ -79,7 +82,16 @@ fn fork_choice_reorganization_and_mempool() {
     assert_eq!(p.counter, 0);
     assert_eq!(p.color, Bytes::default());
     assert_eq!(p.owner, Some(transaction("paint").sender));
-    pool.reconcile(&a.head().state, a.detached(old));
+    let detached = a.detached(old);
+    assert_eq!(
+        detached,
+        vec![
+            transaction("paint"),
+            transaction("transfer"),
+            transaction("b_paint")
+        ]
+    );
+    pool.reconcile(&a.head().state, detached);
     assert_eq!(pool.transactions.len(), 3);
     assert_eq!(pool.projected(&a.head().state).parcels[parcel].counter, 3);
     assert!(a.entries.contains_key(&old));
@@ -101,6 +113,36 @@ fn mempool_pending_counters_and_confirmation() {
     c.insert(block("two"), NOW).unwrap();
     p.reconcile(&c.head().state, vec![]);
     assert!(p.transactions.is_empty());
+}
+#[test]
+fn mempool_reorganization_restores_detached_dependencies_before_pending_children() {
+    let mut c = Chain::default();
+    c.insert(block("one"), NOW).unwrap();
+    let original_state = c.head().state.clone();
+    c.insert(block("two"), NOW).unwrap();
+    let mut pool = Mempool::default();
+    pool.admit(transaction("b_paint"), &c.head().state).unwrap();
+    // The pending B action initially fails on A's restored ownership. The
+    // detached paint and transfer must execute first, then B's action is retried.
+    pool.reconcile(
+        &original_state,
+        vec![
+            transaction("paint"),
+            transaction("transfer"),
+            transaction("paint"),
+        ],
+    );
+    assert_eq!(
+        pool.select(&original_state),
+        vec![
+            transaction("paint"),
+            transaction("transfer"),
+            transaction("b_paint")
+        ]
+    );
+    c.insert(block("three"), NOW).unwrap();
+    pool.reconcile(&c.head().state, vec![transaction("transfer")]);
+    assert!(pool.transactions.is_empty());
 }
 #[test]
 fn bounds_signature_ownership_and_counter_exhaustion() {

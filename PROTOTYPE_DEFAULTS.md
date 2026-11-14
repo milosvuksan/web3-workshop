@@ -91,7 +91,7 @@ TCP, UTF-8 JSON objects, one object per newline. JSON member order and insignifi
 
 Addresses are explicit `--peers` socket addresses, repeated or comma-separated. Every configured node should list every other node. Duplicate configured addresses are collapsed. Simultaneous inbound and outbound sessions are both retained (normally two TCP sessions per peer pair); block/transaction deduplication prevents echo loops. `status.connections` counts sessions, not unique identities. No peer auto-discovery or sparse-topology guarantees.
 
-New valid blocks, including side branches, and newly admitted transactions forward once to all ready sessions, including the origin. Known blocks/transactions do not forward again. Tip anti-entropy recovers missed block announcements. Missing ancestry is fetched backward, then validated forward. Outstanding missing hashes are retried every 2 seconds, sent to every ready peer so a disappearing source does not stall recovery. Up to four outstanding hashes are retried per tick with a rotating cursor; receiving an orphan also immediately requests its parent from that source. Up to four mempool transactions are reannounced per tick with a rotating cursor, recovering lost transaction announcements and out-of-order dependent transactions.
+New valid blocks, including side branches, and newly admitted transactions forward once to all ready sessions, including the origin. Known blocks/transactions do not forward again. Tip anti-entropy recovers missed block announcements. Missing ancestry is fetched backward, then validated forward. Outstanding missing hashes are retried every 2 seconds, sent to every ready peer so a disappearing source does not stall recovery. Up to four outstanding hashes are retried per tick with a rotating cursor; when request storage fills, ancestors needed by retained blocks displace speculative tip requests; receiving an orphan also immediately requests its parent from that source. Up to four mempool transactions are reannounced per tick with a rotating cursor, recovering lost transaction announcements and out-of-order dependent transactions.
 
 ## Local operational defaults (not consensus)
 
@@ -101,21 +101,21 @@ New valid blocks, including side branches, and newly admitted transactions forwa
 | Peer input | IP socket addresses; explicit full mesh, no DNS discovery |
 | Data directory | `data/node`; use a unique directory per running process |
 | Identity | `identity.seed` within data directory, automatically created from OS randomness; `--key PATH` explicitly loads an existing seed |
-| Seed file | 64 lowercase hex digits, optional trailing newline; create-new and sync; Unix mode 0600; reject broader Unix permissions; never print private bytes |
+| Seed file | 64 lowercase hex digits, optional single trailing LF; create-new and sync; Unix mode 0600; reject broader Unix permissions; never print private bytes |
 | Chain storage | Memory only; restarts download from surviving peers; JSON/PPM exports are diagnostics and are never trusted as recovery input |
 | Diagnostics | Atomically replaced `status.json`, deterministic `state.json`, and 64×32 binary P6 `canvas.ppm`, refreshed every 2 seconds and after local commands |
 | Diagnostic state hash | SHA-256 of row-major parcels: owner-present `u8`, owner bytes (zero when absent), RGB 3 bytes, next counter `u64` big-endian; not a consensus field |
 | Mining | Off until `--mine` or `mining on`; one dedicated CPU worker; fixed 23-bit target, no reduced-difficulty CLI mode |
-| Cancellation | Check at most every 16,384 hashes; new tip or changed mempool replaces the candidate; stale results fail generation/parent checks and accepted results undergo full validation |
+| Cancellation | Check at most every 16,384 hashes; new tip or changed mempool replaces the candidate; queued successful results survive periodic maintenance; stale results fail generation/parent checks and accepted results undergo full validation |
 | Mempool | 4096 entries; arrival order, state-aware admission/selection, 256 selected per block; local commands reserve pending counters |
 | Unknown/future blocks | At most 1024 pending blocks and 1024 wanted hashes, in memory; on overflow prefer lower-height ancestors, and rediscover evicted descendants from missing-parent/tip exchange |
-| Queues | 1024 coordinator events; 128 outbound messages per session; a full/closed outbound queue drops that session from the coordinator; reconnect/catch-up repairs it |
+| Queues | 1024 coordinator events; 128 outbound messages per session; a full/closed outbound queue cancels that session and closes its transport immediately; reconnect/catch-up repairs it; coordinator shutdown owns and cancels its network tasks |
 | Connection limits | At most 128 incoming sessions; configured outgoing connections separately bounded by configured peer count |
 | Timeouts/reconnect | 5-second connect/write timeouts; reconnect after 2 seconds; 2-second tip/request retry interval; 30-second read-idle timeout |
 | Lag | On by default; disable explicitly using `--no-lag` |
 | Simulation | Independently per outbound message and TCP session, including hello, requests, responses, broadcasts; 10% drop, uniform integer delay 20–250 ms, surviving messages preserve FIFO order within a session |
 | Simulation randomness | Seeded xorshift64, `--lag-seed 1` by default, mixed with connection sequence; reproducible for the same session/event order; never used for keys |
-| Console | stdin commands; EOF leaves the node serving peers; `quit` or Ctrl-C shuts down; stdout responses, stderr lifecycle/rejection logs |
+| Console | stdin commands; EOF leaves the node serving peers; `quit` or Ctrl-C finishes node cleanup and bounds Tokio runtime teardown to 100 ms; stdout responses, stderr lifecycle/rejection logs |
 
 The node is a workshop prototype: valid chain history and its state snapshots remain in memory without pruning. Pending work and per-peer queues are bounded, but indefinitely long chains require a storage/pruning design. Losing all peers and restarting all nodes loses the chain; keep at least one survivor for the required recovery scenario. Run one process per data directory. Optional swaps, delegation, dynamic difficulty, sparse topology, and durable chain storage are not implemented.
 

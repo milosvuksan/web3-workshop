@@ -66,11 +66,27 @@ impl Chain {
         path.reverse();
         path
     }
-    pub fn detached(&self, old_tip: Hash) -> Vec<crate::protocol::Transaction> {
-        let active = self.path(self.tip);
-        self.path(old_tip)
+    pub fn detached(&self, mut old_tip: Hash) -> Vec<crate::protocol::Transaction> {
+        if !self.entries.contains_key(&old_tip) {
+            return Vec::new();
+        }
+        let mut new_tip = self.tip;
+        let mut detached = Vec::new();
+        // Walk only the divergent suffixes. Scanning both full paths and testing
+        // membership in a Vec made even a one-block extension quadratic in height.
+        while old_tip != new_tip {
+            let old = &self.entries[&old_tip].block;
+            let new = &self.entries[&new_tip].block;
+            if old.height >= new.height {
+                detached.push(old_tip);
+                old_tip = old.previous;
+            } else {
+                new_tip = new.previous;
+            }
+        }
+        detached.reverse();
+        detached
             .into_iter()
-            .filter(|hash| !active.contains(hash))
             .flat_map(|hash| self.entries[&hash].block.transactions.clone())
             .collect()
     }

@@ -4,11 +4,24 @@ use baneworkshop::{
 };
 use clap::Parser;
 use sha2::{Digest, Sha256};
-#[tokio::main]
-async fn main() {
+mod benchmark;
+fn run_node(config: baneworkshop::config::Config) -> baneworkshop::Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(baneworkshop::node::run(config));
+    // Node shutdown already stops and joins its miner and writes diagnostics.
+    // Tokio stdin uses a blocking OS read that cannot be cancelled while stdin
+    // remains open. Bound runtime teardown so Ctrl-C can finish in that case.
+    runtime.shutdown_timeout(std::time::Duration::from_millis(100));
+    result
+}
+
+fn main() {
     let result = match Cli::parse().command {
-        Command::Node(config) => baneworkshop::node::run(config).await,
+        Command::Node(config) => run_node(config),
         Command::Key { file } => baneworkshop::cli::key(file),
+        Command::BenchmarkMining { samples, json } => benchmark::run(samples, json),
         Command::Benchmark { hashes } => {
             let mut bytes = genesis().canonical_bytes();
             bytes.truncate(bytes.len() - 8);

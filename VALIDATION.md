@@ -1,5 +1,7 @@
 # Prototype validation — 2026-11-14
 
+This records the original implementation checks. The subsequent Sol Medium audit, 29-test suite, shutdown/recovery regressions, and full new-block benchmarks are recorded in [AUDIT_REPORT.md](AUDIT_REPORT.md).
+
 Validated on Rust 1.100.0 / Cargo 1.100.0, with the Rust 2024 package on `milos`. The implementation is in a separate worktree so the original `main` checkout and its untracked files remain intact. `SPEC.md` is byte-identical to the supplied file. `PROTOTYPE_DEFAULTS.md` records the provisional decisions that complete its blanks for this implementation.
 
 ## Checks performed

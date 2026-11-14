@@ -85,3 +85,48 @@ fn bounded_orphan_storage_prioritizes_ancestry() {
     assert_eq!(sync.waiting.len(), MAX_WAITING);
     assert!(!sync.waiting.contains_key(&hash));
 }
+
+#[test]
+fn duplicate_orphan_does_not_evict_other_pending_blocks() {
+    use baneworkshop::{
+        network::sync::{MAX_WAITING, Sync},
+        protocol::{Block, params::genesis},
+    };
+    let mut sync = Sync::default();
+    for height in 1..=MAX_WAITING as u64 {
+        sync.defer(Block {
+            height,
+            ..genesis()
+        });
+    }
+    let before: Vec<_> = sync.waiting.keys().copied().collect();
+    sync.defer(Block {
+        height: 1,
+        ..genesis()
+    });
+    assert_eq!(sync.waiting.keys().copied().collect::<Vec<_>>(), before);
+}
+
+#[test]
+fn needed_ancestor_displaces_speculative_requests_at_capacity() {
+    use baneworkshop::{
+        network::sync::{MAX_WAITING, Sync},
+        protocol::{Block, params::genesis},
+    };
+    let mut sync = Sync::default();
+    for nonce in 0..MAX_WAITING as u64 {
+        sync.want(Block { nonce, ..genesis() }.hash());
+    }
+    let parent = Bytes([0x42; 32]);
+    sync.defer(Block {
+        height: 2,
+        previous: parent,
+        ..genesis()
+    });
+    sync.want_parent(parent);
+    assert_eq!(sync.wanted.len(), MAX_WAITING);
+    assert!(sync.wanted.contains(&parent));
+    // Speculative tips cannot evict the required ancestor.
+    sync.want(Bytes([0x43; 32]));
+    assert!(sync.wanted.contains(&parent));
+}

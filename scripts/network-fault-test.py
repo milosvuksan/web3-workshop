@@ -98,10 +98,23 @@ with tempfile.TemporaryDirectory(prefix='pixel-faults-') as folder:
                     assert got_three and disconnected
                     assert all(requests[h] >= 2 for h in fixtures)
                     # Malformed and oversized connections must leave the coordinator alive.
-                    for payload in [b'{"type":"unknown"}\n', b' ' * 262145]:
+                    rejected_hellos = [
+                        {'type': 'hello', 'version': 2, 'genesis': v['genesis']['hash'], 'identity': v['b_public']},
+                        {'type': 'hello', 'version': 1, 'genesis': v['genesis']['hash'], 'identity': status['identity']},
+                    ]
+                    payloads = [b'{"type":"unknown"}\n', b' ' * 262145]
+                    payloads.extend(json.dumps(hello).encode() + b'\n' for hello in rejected_hellos)
+                    for payload in payloads:
                         with socket.create_connection(('127.0.0.1', port), timeout=1) as bad:
                             bad.sendall(payload)
-                    print('PASS deliberate loss, missing ancestors, reconnect during catch-up, delayed messages, fork rollback, and malformed TCP peers', flush=True)
+                            bad.settimeout(2)
+                            try:
+                                while bad.recv(8192):
+                                    pass  # A hello already in flight may precede closure.
+                            except ConnectionResetError:
+                                pass
+                    assert process.poll() is None, (folder / 'process.log').read_text()
+                    print('PASS deliberate loss, missing ancestors, reconnect during catch-up, delayed messages, fork rollback, and rejected TCP/hello peers', flush=True)
                     break
             else:
                 raise TimeoutError((folder / 'process.log').read_text())

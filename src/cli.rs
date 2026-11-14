@@ -23,8 +23,17 @@ pub enum Command {
     },
     /// Measure actual header hashing at the fixed 23-bit target.
     Benchmark {
-        #[arg(long, default_value_t = 2_000_000)]
+        #[arg(long, default_value_t = 2_000_000, value_parser = clap::value_parser!(u64).range(1..))]
         hashes: u64,
+    },
+    /// Mine and fully validate sequential new blocks at the fixed 23-bit target.
+    BenchmarkMining {
+        /// Number of new blocks; 30 or more recommended for timing percentiles.
+        #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u32).range(1..))]
+        samples: u32,
+        /// Emit the complete measurements as JSON.
+        #[arg(long)]
+        json: bool,
     },
 }
 pub fn transaction(line: &str, counter: u64) -> Result<Transaction> {

@@ -15,6 +15,7 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 python3 scripts/verify-vectors.py          # Python 3 + OpenSSL; independent encoding/crypto check
 python3 scripts/network-fault-test.py      # after release build; real TCP fault injection
+python3 scripts/test-shutdown.py --binary target/release/baneworkshop
 ./scripts/workshop-demo                    # real 23-bit mining, lag, SIGKILL, restart
 ```
 
@@ -61,6 +62,10 @@ Generate/reload a standalone key with `target/release/baneworkshop key --file da
 
 ```bash
 target/release/baneworkshop benchmark --hashes 4000000
+# Mine and fully validate 100 sequential new blocks with a reproducible workload:
+target/release/baneworkshop benchmark-mining --samples 100 --json
+# Measure 100 actual node block intervals, including worker/coordinator overhead:
+python3 scripts/benchmark-node.py --blocks 100 --warmup 5 --output /tmp/node-mining.json
 ```
 
-This hashes the actual canonical header using the same cached SHA-256 prefix as the miner. Expected group block time is approximately `8388608 / combined_hashes_per_second` seconds. Difficulty stays at the agreed 23 bits regardless of measured speed. See [VALIDATION.md](VALIDATION.md) for the implementation run's measurements and test results.
+This hashes the actual canonical header using the same cached SHA-256 prefix as the miner. Expected group block time is approximately `8388608 / combined_hashes_per_second` seconds. Difficulty stays at the agreed 23 bits regardless of measured speed. The new-block benchmark uses the production miner and validator at 23 bits with one worker; its JSON retains every sample and reports mean, median, p95, and hash rate. The live-node benchmark starts an isolated node with a fresh temporary identity, normal diagnostics, and default-on lag; no peers are connected. See [AUDIT_REPORT.md](AUDIT_REPORT.md) for the audit fixes and current measured mining times, or [VALIDATION.md](VALIDATION.md) for the original implementation run.

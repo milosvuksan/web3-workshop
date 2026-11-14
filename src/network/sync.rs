@@ -12,7 +12,25 @@ impl Sync {
             self.wanted.insert(hash);
         }
     }
+    /// Ancestry needed by retained blocks takes priority over speculative tips.
+    pub fn want_parent(&mut self, hash: Hash) {
+        if self.wanted.contains(&hash) {
+            return;
+        }
+        if self.wanted.len() >= MAX_WAITING {
+            let parents: BTreeSet<_> = self.waiting.values().map(|b| b.previous).collect();
+            let expendable = self.wanted.iter().find(|h| !parents.contains(h)).copied();
+            if let Some(candidate) = expendable {
+                self.wanted.remove(&candidate);
+            }
+        }
+        self.want(hash);
+    }
     pub fn defer(&mut self, block: Block) {
+        let hash = block.hash();
+        if self.waiting.contains_key(&hash) {
+            return;
+        }
         if self.waiting.len() >= MAX_WAITING {
             // Prefer older ancestry so a history longer than the orphan limit
             // can still reach a known parent. Descendants are fetched again.

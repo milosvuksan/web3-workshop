@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Real 23-bit mining, default lag, late join, transfer, SIGKILL, and recovery.
+Run after cargo build --release. Uses fresh isolated data and random local ports.
+"""
+import argparse
+import json
+from pathlib import Path
+import socket
+import subprocess
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--binary', type=Path, default=ROOT / 'target/release/baneworkshop')
+parser.add_argument('--timeout', type=float, default=180)
+parser.add_argument('--data-dir', type=Path, help='Fresh output directory; logs retained here')
+args = parser.parse_args()
+base = args.data_dir or Path(tempfile.mkdtemp(prefix='pixel-demo-'))
+base.mkdir(parents=True, exist_ok=True)
+if any(base.iterdir()):
+    raise SystemExit('Demo data directory must be empty')
+print(f'Demo data: {base}', flush=True)
+ports = []
+reservations = []
+for _ in range(3):
+    sock = socket.socket()
+    sock.bind(('127.0.0.1', 0))
+    ports.append(sock.getsockname()[1])
+    reservations.append(sock)
+for sock in reservations:
+    sock.close()
+processes = {}
+logs = []
+
+def start(i):
+    folder = base / str(i)
+    folder.mkdir(exist_ok=True)
+    log = (folder / 'process.log').open('a')
+    logs.append(log)
+    cmd = [str(args.binary.resolve()), 'node', '--listen', f'127.0.0.1:{ports[i]}', '--data-dir', str(folder), '--lag-seed', str(41 + i)]
+    for j in range(3):
+        if j != i:
+            cmd.extend(['--peers', f'127.0.0.1:{ports[j]}'])
+    processes[i] = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log, stderr=log, text=True)
+    return processes[i]
+
+def command(i, line):
+    processes[i].stdin.write(line + '\n')
+    processes[i].stdin.flush()
+
+def read(i, file='status.json'):
+    return json.loads((base / str(i) / file).read_text())
+
+def wait(label, predicate):
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        for i, process in processes.items():
+            if process.poll() is not None:
+                raise RuntimeError(f'Node {i} exited; inspect {base / str(i) / "process.log"}')
+        try:
+            value = predicate()
+            if value:
+                print(f'PASS {label}', flush=True)
+                return value
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+        time.sleep(0.2)
+    raise TimeoutError(f'{label}; inspect logs in {base}')
+
+def converge(ids):
+    states = [read(i, 'state.json') for i in ids]
+    statuses = [read(i) for i in ids]
+    return (all(s == states[0] for s in states) and all(s['mempool'] == 0 and s['waiting'] == 0 for s in statuses))
+
+try:
+    start(0)
+    start(1)
+    wait('two nodes connected with lag enabled', lambda: read(0)['connections'] >= 1 and read(1)['connections'] >= 1 and read(0)['lag'] and read(1)['lag'])
+    command(0, 'mining on')
+    wait('real 23-bit block and owned parcel', lambda: read(0)['owned'])
+    command(0, 'mining off')
+    wait('initial convergence', lambda: converge([0, 1]))
+    parcel = read(0)['owned'][0]
+    recipient = read(1)['identity']
+    command(0, f'paint {parcel} ff8000')
+    command(0, f'transfer {parcel} {recipient}')
+    # Mine on a different node to exercise transaction gossip and pending counters.
+    wait('both transactions gossiped', lambda: read(1)['mempool'] == 2)
+    command(1, 'mining on')
+    wait('paint and transfer confirmed', lambda: read(1, 'state.json')['state']['parcels'][parcel]['counter'] == 2)
+    command(1, 'mining off')
+    wait('transfer convergence', lambda: converge([0, 1]))
+    pixel = read(0, 'state.json')['state']['parcels'][parcel]
+    assert pixel['owner'] == recipient and pixel['color'] == 'ff8000'
+    start(2)
+    wait('late join recovers full history', lambda: converge([0, 1, 2]) and read(2)['height'] >= 2)
+    wait('direct full mesh', lambda: all(read(i)['connections'] >= 2 for i in range(3)))
+    baseline = read(0)['height']
+    for i in range(3):
+        command(i, 'mining on')
+    wait('concurrent miners advance the mesh', lambda: min(read(i)['height'] for i in range(3)) >= baseline + 3)
+    for i in range(3):
+        command(i, 'mining off')
+    wait('concurrent miners settle to one branch', lambda: converge([0, 1, 2]))
+    old_identity = read(0)['identity']
+    old_height = read(1)['height']
+    processes[0].kill()  # Deliberate SIGKILL, no graceful export or persistence.
+    processes[0].wait(timeout=5)
+    del processes[0]
+    command(1, f'paint {parcel} 0000ff')
+    command(1, 'mining on')
+    wait('healthy peers continue after SIGKILL', lambda: read(1)['height'] > old_height and read(1, 'state.json')['state']['parcels'][parcel]['counter'] == 3)
+    command(1, 'mining off')
+    wait('survivors converge', lambda: converge([1, 2]))
+    # state.json is diagnostic only; the node never loads it as chain storage.
+    for file in ['status.json', 'state.json', 'canvas.ppm']:
+        (base / '0' / file).unlink(missing_ok=True)
+    start(0)
+    wait('restart retains identity and downloads chain', lambda: converge([0, 1, 2]) and read(0)['identity'] == old_identity and read(0)['height'] > old_height)
+    assert all(read(i, 'state.json')['state']['parcels'][parcel]['color'] == '0000ff' for i in range(3))
+    stable = [read(i)['tip'] for i in range(3)]
+    # Leave networking active through several retry periods before final comparison.
+    for _ in range(30):
+        time.sleep(0.2)
+    assert converge([0, 1, 2])
+    assert [read(i)['tip'] for i in range(3)] == stable
+    canvases = [(base / str(i) / 'canvas.ppm').read_bytes() for i in range(3)]
+    assert canvases[0] == canvases[1] == canvases[2]
+    print(json.dumps({'result': 'PASS', 'lag': True, 'difficulty': 23, 'height': read(0)['height'], 'tip': read(0)['tip'], 'state_hash': read(0)['state_hash'], 'parcel': parcel, 'data_dir': str(base)}, indent=2), flush=True)
+finally:
+    for process in processes.values():
+        if process.poll() is None:
+            try:
+                process.stdin.write('quit\n')
+                process.stdin.flush()
+                process.wait(timeout=10)
+            except (BrokenPipeError, subprocess.TimeoutExpired):
+                process.kill()
+                process.wait(timeout=5)
+    for log in logs:
+        log.close()

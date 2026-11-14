@@ -5,9 +5,7 @@ use baneworkshop::{
 use clap::Parser;
 use sha2::{Digest, Sha256};
 fn run_node(config: baneworkshop::config::Config, tui: bool) -> baneworkshop::Result<()> {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     let result = runtime.block_on(baneworkshop::node::run_with_ui(config, tui));
     // Node shutdown already stops and joins its miner and writes diagnostics.
     // Tokio stdin uses a blocking OS read that cannot be cancelled while stdin
@@ -17,10 +15,7 @@ fn run_node(config: baneworkshop::config::Config, tui: bool) -> baneworkshop::Re
 }
 
 fn main() {
-    let result = match Cli::parse()
-        .command
-        .unwrap_or_else(|| Command::Tui(Default::default()))
-    {
+    let result = match Cli::parse().command.unwrap_or_else(|| Command::Tui(Default::default())) {
         Command::Tui(config) => run_node(config, true),
         Command::Node(config) => run_node(config, false),
         Command::Key { file } => baneworkshop::cli::key(file),
@@ -30,13 +25,7 @@ fn main() {
             let prefix = Sha256::new().chain_update(bytes);
             let start = std::time::Instant::now();
             for nonce in 0..hashes {
-                let hash: Bytes<32> = Bytes(
-                    prefix
-                        .clone()
-                        .chain_update(nonce.to_be_bytes())
-                        .finalize()
-                        .into(),
-                );
+                let hash: Bytes<32> = Bytes(prefix.clone().chain_update(nonce.to_be_bytes()).finalize().into());
                 std::hint::black_box(hash);
             }
             let rate = hashes as f64 / start.elapsed().as_secs_f64();

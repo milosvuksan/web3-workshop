@@ -36,18 +36,8 @@ fn sequential_transactions_and_replay() {
     assert_eq!(chain.head().state, before);
     chain.insert(block("two"), NOW).unwrap();
     assert_eq!(chain.head().state.parcels[parcel].counter, 2);
-    assert_eq!(
-        chain.head().state.parcels[parcel].color,
-        Bytes([255, 128, 0])
-    );
-    assert!(
-        chain
-            .head()
-            .state
-            .clone()
-            .apply(&transaction("paint"))
-            .is_err()
-    );
+    assert_eq!(chain.head().state.parcels[parcel].color, Bytes([255, 128, 0]));
+    assert!(chain.head().state.clone().apply(&transaction("paint")).is_err());
     chain.insert(block("three"), NOW).unwrap();
     assert_eq!(chain.head().state.parcels[parcel].color, Bytes([0, 0, 255]));
     assert_eq!(chain.head().state.parcels[parcel].counter, 3);
@@ -83,14 +73,7 @@ fn fork_choice_reorganization_and_mempool() {
     assert_eq!(p.color, Bytes::default());
     assert_eq!(p.owner, Some(transaction("paint").sender));
     let detached = a.detached(old);
-    assert_eq!(
-        detached,
-        vec![
-            transaction("paint"),
-            transaction("transfer"),
-            transaction("b_paint")
-        ]
-    );
+    assert_eq!(detached, vec![transaction("paint"), transaction("transfer"), transaction("b_paint")]);
     pool.reconcile(&a.head().state, detached);
     assert_eq!(pool.transactions.len(), 3);
     assert_eq!(pool.projected(&a.head().state).parcels[parcel].counter, 3);
@@ -124,22 +107,8 @@ fn mempool_reorganization_restores_detached_dependencies_before_pending_children
     pool.admit(transaction("b_paint"), &c.head().state).unwrap();
     // The pending B action initially fails on A's restored ownership. The
     // detached paint and transfer must execute first, then B's action is retried.
-    pool.reconcile(
-        &original_state,
-        vec![
-            transaction("paint"),
-            transaction("transfer"),
-            transaction("paint"),
-        ],
-    );
-    assert_eq!(
-        pool.select(&original_state),
-        vec![
-            transaction("paint"),
-            transaction("transfer"),
-            transaction("b_paint")
-        ]
-    );
+    pool.reconcile(&original_state, vec![transaction("paint"), transaction("transfer"), transaction("paint")]);
+    assert_eq!(pool.select(&original_state), vec![transaction("paint"), transaction("transfer"), transaction("b_paint")]);
     c.insert(block("three"), NOW).unwrap();
     pool.reconcile(&c.head().state, vec![transaction("transfer")]);
     assert!(pool.transactions.is_empty());
@@ -169,9 +138,7 @@ fn bounds_signature_ownership_and_counter_exhaustion() {
     assert_eq!(state, old);
     let mut tx = transaction("transfer");
     tx.counter = 0;
-    tx.action = Action::Transfer {
-        recipient: Bytes::default(),
-    };
+    tx.action = Action::Transfer { recipient: Bytes::default() };
     crypto::sign(&mut tx, &key);
     assert!(original.clone().apply(&tx).is_err());
 }
@@ -201,10 +168,7 @@ fn allocation_cycles_full_canvas_and_large_timestamp() {
 #[test]
 fn block_validation_unknown_parent_future_and_cancellation() {
     let mut chain = Chain::default();
-    assert!(matches!(
-        chain.insert(block("two"), NOW),
-        Err(Error::UnknownParent(_))
-    ));
+    assert!(matches!(chain.insert(block("two"), NOW), Err(Error::UnknownParent(_))));
     assert!(matches!(chain.insert(block("one"), 0), Err(Error::Future)));
     chain.insert(block("one"), NOW).unwrap();
     let parent = &chain.head().block;
@@ -250,9 +214,7 @@ fn self_transfer_and_transfer_back_preserve_replay_history() {
     let mut tx = transaction("paint");
     let parcel = usize::from(tx.parcel);
     let initial_color = state.parcels[parcel].color;
-    tx.action = Action::Transfer {
-        recipient: crypto::public_key(&a),
-    };
+    tx.action = Action::Transfer { recipient: crypto::public_key(&a) };
     crypto::sign(&mut tx, &a);
     let old_self_transfer = tx.clone();
     state.apply(&tx).unwrap();
@@ -260,15 +222,11 @@ fn self_transfer_and_transfer_back_preserve_replay_history() {
     assert_eq!(state.parcels[parcel].counter, 1);
 
     tx.counter = 1;
-    tx.action = Action::Transfer {
-        recipient: crypto::public_key(&b),
-    };
+    tx.action = Action::Transfer { recipient: crypto::public_key(&b) };
     crypto::sign(&mut tx, &a);
     state.apply(&tx).unwrap();
     tx.counter = 2;
-    tx.action = Action::Transfer {
-        recipient: crypto::public_key(&a),
-    };
+    tx.action = Action::Transfer { recipient: crypto::public_key(&a) };
     crypto::sign(&mut tx, &b);
     state.apply(&tx).unwrap();
     assert_eq!(state.parcels[parcel].owner, Some(crypto::public_key(&a)));

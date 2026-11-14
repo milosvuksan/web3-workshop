@@ -20,13 +20,9 @@ impl Mempool {
         self.transactions
             .iter()
             .filter_map(|tx| match tx.action {
-                Action::Paint { color } if tx.sender == identity => Some((
-                    usize::from(tx.parcel),
-                    PendingPaint {
-                        color,
-                        transaction: tx.id(),
-                    },
-                )),
+                Action::Paint { color } if tx.sender == identity => {
+                    Some((usize::from(tx.parcel), PendingPaint { color, transaction: tx.id() }))
+                }
                 _ => None,
             })
             .collect()
@@ -51,12 +47,7 @@ impl Mempool {
     }
     pub fn select(&self, state: &State) -> Vec<Transaction> {
         let mut state = state.clone();
-        self.transactions
-            .iter()
-            .filter(|tx| state.apply(tx).is_ok())
-            .take(MAX_TRANSACTIONS)
-            .cloned()
-            .collect()
+        self.transactions.iter().filter(|tx| state.apply(tx).is_ok()).take(MAX_TRANSACTIONS).cloned().collect()
     }
     pub fn reconcile(&mut self, state: &State, detached: Vec<Transaction>) {
         let mut candidates = std::mem::take(&mut self.transactions);
@@ -88,8 +79,7 @@ mod tests {
     use crate::{chain::Chain, cli, crypto, protocol::Block};
     #[test]
     fn repeated_paint_previews_follow_latest_edit_and_clear_on_confirmation() {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
         let mut chain = Chain::default();
         for name in ["one", "two", "three"] {
             let block: Block = serde_json::from_value(vectors[name]["block"].clone()).unwrap();
@@ -104,24 +94,12 @@ mod tests {
             crypto::sign(&mut tx, &key);
             pool.admit(tx, state).unwrap();
         }
-        assert_eq!(
-            pool.pending_paints(identity)[&181].color,
-            crate::colors::parse("123abc").unwrap()
-        );
-        assert!(
-            pool.pending_paints(crate::protocol::Bytes([9; 32]))
-                .is_empty()
-        );
-        assert_eq!(
-            state.parcels[181].color,
-            crate::colors::parse("blue").unwrap()
-        );
+        assert_eq!(pool.pending_paints(identity)[&181].color, crate::colors::parse("123abc").unwrap());
+        assert!(pool.pending_paints(crate::protocol::Bytes([9; 32])).is_empty());
+        assert_eq!(state.parcels[181].color, crate::colors::parse("blue").unwrap());
         let confirmed = pool.projected(state);
         pool.reconcile(&confirmed, Vec::new());
         assert!(pool.pending_paints(identity).is_empty());
-        assert_eq!(
-            confirmed.parcels[181].color,
-            crate::colors::parse("123abc").unwrap()
-        );
+        assert_eq!(confirmed.parcels[181].color, crate::colors::parse("123abc").unwrap());
     }
 }

@@ -52,11 +52,7 @@ impl Sync {
         if self.waiting.len() >= MAX_WAITING {
             // Prefer older ancestry so a history longer than the orphan limit
             // can still reach a known parent. Descendants are fetched again.
-            let highest = self
-                .waiting
-                .iter()
-                .max_by_key(|(_, b)| b.height)
-                .map(|(hash, b)| (*hash, b.height));
+            let highest = self.waiting.iter().max_by_key(|(_, b)| b.height).map(|(hash, b)| (*hash, b.height));
             if let Some((hash, height)) = highest {
                 if block.height > height {
                     return;

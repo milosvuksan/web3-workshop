@@ -24,11 +24,7 @@ impl Discovery {
         UdpSocket::from_std(socket.into())
     }
     pub fn announcement(self, tcp_port: u16) -> String {
-        format!(
-            "PIXELCHAIN v1 {} {tcp_port} {}",
-            genesis().hash(),
-            self.identity
-        )
+        format!("PIXELCHAIN v1 {} {tcp_port} {}", genesis().hash(), self.identity)
     }
     pub fn parse(self, bytes: &[u8], source: SocketAddr) -> Option<(PublicKey, SocketAddr)> {
         let text = std::str::from_utf8(bytes).ok()?;
@@ -55,20 +51,11 @@ mod tests {
     use ed25519_dalek::SigningKey;
     #[test]
     fn packets_validate_chain_key_and_port_and_use_source_ip() {
-        let local = Discovery {
-            port: 7000,
-            identity: crypto::public_key(&SigningKey::from_bytes(&[1; 32])),
-        };
-        let remote = Discovery {
-            identity: crypto::public_key(&SigningKey::from_bytes(&[2; 32])),
-            ..local
-        };
+        let local = Discovery { port: 7000, identity: crypto::public_key(&SigningKey::from_bytes(&[1; 32])) };
+        let remote = Discovery { identity: crypto::public_key(&SigningKey::from_bytes(&[2; 32])), ..local };
         let source = "192.0.2.3:9999".parse().unwrap();
         let packet = remote.announcement(7002);
-        assert_eq!(
-            local.parse(packet.as_bytes(), source),
-            Some((remote.identity, "192.0.2.3:7002".parse().unwrap()))
-        );
+        assert_eq!(local.parse(packet.as_bytes(), source), Some((remote.identity, "192.0.2.3:7002".parse().unwrap())));
         for bad in [
             local.announcement(7001),
             remote.announcement(0),
@@ -81,10 +68,7 @@ mod tests {
             format!("{packet} extra"),
             packet.replace(' ', "  "),
         ] {
-            assert!(
-                local.parse(bad.as_bytes(), source).is_none(),
-                "accepted {bad}"
-            );
+            assert!(local.parse(bad.as_bytes(), source).is_none(), "accepted {bad}");
         }
     }
 }

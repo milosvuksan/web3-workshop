@@ -75,11 +75,7 @@ pub const NAMED: &[(&str, &str)] = &[
     ("yellowgreen", "9acd32"),
 ];
 fn normalize(input: &str) -> String {
-    input
-        .chars()
-        .filter(|c| !c.is_whitespace() && !matches!(c, '-' | '_'))
-        .flat_map(char::to_lowercase)
-        .collect()
+    input.chars().filter(|c| !c.is_whitespace() && !matches!(c, '-' | '_')).flat_map(char::to_lowercase).collect()
 }
 pub fn parse(input: &str) -> Result<Color> {
     let text = input.trim().trim_start_matches('#').to_ascii_lowercase();
@@ -91,21 +87,14 @@ pub fn parse(input: &str) -> Result<Color> {
         .iter()
         .find(|(candidate, _)| *candidate == name)
         .map(|(_, hex)| hex.parse().expect("built-in color"))
-        .ok_or(Error::Invalid(
-            "unknown color; choose a suggested name or enter six RGB hex digits",
-        ))
+        .ok_or(Error::Invalid("unknown color; choose a suggested name or enter six RGB hex digits"))
 }
 pub fn suggestions(input: &str) -> Vec<&'static str> {
     let prefix = normalize(input);
-    NAMED
-        .iter()
-        .filter_map(|(name, _)| name.starts_with(&prefix).then_some(*name))
-        .collect()
+    NAMED.iter().filter_map(|(name, _)| name.starts_with(&prefix).then_some(*name)).collect()
 }
 pub fn name(color: Color) -> Option<&'static str> {
-    NAMED
-        .iter()
-        .find_map(|(name, value)| (parse(value).ok() == Some(color)).then_some(*name))
+    NAMED.iter().find_map(|(name, value)| (parse(value).ok() == Some(color)).then_some(*name))
 }
 pub fn rgb(color: Color) -> ratatui::style::Color {
     let Bytes([r, g, b]) = color;

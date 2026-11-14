@@ -22,11 +22,7 @@ impl<const N: usize> fmt::Debug for Bytes<N> {
 impl<const N: usize> FromStr for Bytes<N> {
     type Err = crate::Error;
     fn from_str(s: &str) -> crate::Result<Self> {
-        if s.len() != N * 2
-            || !s
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        {
+        if s.len() != N * 2 || !s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
             return Err(crate::Error::Invalid("expected fixed-width lowercase hex"));
         }
         let mut bytes = [0; N];
@@ -41,9 +37,7 @@ impl<const N: usize> Serialize for Bytes<N> {
 }
 impl<'de, const N: usize> Deserialize<'de> for Bytes<N> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(de::Error::custom)
+        String::deserialize(deserializer)?.parse().map_err(de::Error::custom)
     }
 }
 pub type Hash = Bytes<32>;

@@ -13,10 +13,7 @@ use std::collections::BTreeMap;
 #[serde(tag = "method", rename_all = "snake_case")]
 pub enum Source {
     Mining,
-    Transfer {
-        sender: PublicKey,
-        transaction: Hash,
-    },
+    Transfer { sender: PublicKey, transaction: Hash },
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Acquisition {
@@ -35,21 +32,10 @@ impl Acquisition {
     }
 }
 pub fn timestamp_utc(timestamp: u64) -> String {
-    i64::try_from(timestamp)
-        .ok()
-        .and_then(|seconds| time::OffsetDateTime::from_unix_timestamp(seconds).ok())
-        .map_or_else(
-            || format!("{timestamp} (Unix seconds)"),
-            |date| {
-                format!(
-                    "{} {:02}:{:02}:{:02} UTC",
-                    date.date(),
-                    date.hour(),
-                    date.minute(),
-                    date.second()
-                )
-            },
-        )
+    i64::try_from(timestamp).ok().and_then(|seconds| time::OffsetDateTime::from_unix_timestamp(seconds).ok()).map_or_else(
+        || format!("{timestamp} (Unix seconds)"),
+        |date| format!("{} {:02}:{:02}:{:02} UTC", date.date(), date.hour(), date.minute(), date.second()),
+    )
 }
 pub struct Ownership {
     tip: Hash,
@@ -57,10 +43,7 @@ pub struct Ownership {
 }
 impl Default for Ownership {
     fn default() -> Self {
-        Self {
-            tip: genesis().hash(),
-            parcels: BTreeMap::new(),
-        }
+        Self { tip: genesis().hash(), parcels: BTreeMap::new() }
     }
 }
 impl Ownership {
@@ -82,12 +65,7 @@ impl Ownership {
     }
     fn apply(&mut self, hash: Hash, entry: &Entry, parent: &Entry, identity: PublicKey) {
         let block = &entry.block;
-        let receipt = |source| Acquisition {
-            height: block.height,
-            timestamp: block.timestamp,
-            block: hash,
-            source,
-        };
+        let receipt = |source| Acquisition { height: block.height, timestamp: block.timestamp, block: hash, source };
         // Preserve receipt dates for painting and self-transfers. A transfer back
         // is a new acquisition, including multiple transfers in the same block.
         for tx in &block.transactions {
@@ -96,13 +74,7 @@ impl Ownership {
                     self.parcels.remove(&usize::from(tx.parcel));
                 }
                 if recipient == identity && tx.sender != identity {
-                    self.parcels.insert(
-                        usize::from(tx.parcel),
-                        receipt(Source::Transfer {
-                            sender: tx.sender,
-                            transaction: tx.id(),
-                        }),
-                    );
+                    self.parcels.insert(usize::from(tx.parcel), receipt(Source::Transfer { sender: tx.sender, transaction: tx.id() }));
                 }
             }
         }
@@ -121,10 +93,17 @@ impl Ownership {
         }
     }
     pub fn json(&self, state: &crate::state::State) -> serde_json::Value {
-        serde_json::Value::Array(self.parcels.iter().map(|(id, acquisition)| serde_json::json!({
-            "parcel":id, "x":id % WIDTH, "y":id / WIDTH, "color":state.parcels[*id].color,
-            "received_at_utc":timestamp_utc(acquisition.timestamp), "acquisition":acquisition,
-        })).collect())
+        serde_json::Value::Array(
+            self.parcels
+                .iter()
+                .map(|(id, acquisition)| {
+                    serde_json::json!({
+                        "parcel":id, "x":id % WIDTH, "y":id / WIDTH, "color":state.parcels[*id].color,
+                        "received_at_utc":timestamp_utc(acquisition.timestamp), "acquisition":acquisition,
+                    })
+                })
+                .collect(),
+        )
     }
 }
 
@@ -133,8 +112,7 @@ mod tests {
     use super::*;
     use crate::protocol::Block;
     fn fixture(name: &str) -> Block {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
         serde_json::from_value(vectors[name]["block"].clone()).unwrap()
     }
     #[test]
@@ -149,14 +127,8 @@ mod tests {
             owned_a.update(&chain, a);
             owned_b.update(&chain, b);
             for (identity, owned) in [(a, &owned_a), (b, &owned_b)] {
-                let expected: Vec<_> = chain
-                    .head()
-                    .state
-                    .parcels
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(id, p)| (p.owner == Some(identity)).then_some(id))
-                    .collect();
+                let expected: Vec<_> =
+                    chain.head().state.parcels.iter().enumerate().filter_map(|(id, p)| (p.owner == Some(identity)).then_some(id)).collect();
                 assert_eq!(owned.parcels.keys().copied().collect::<Vec<_>>(), expected);
             }
             if name == "one" {
@@ -164,31 +136,19 @@ mod tests {
             }
             if name == "two" {
                 assert!(!owned_a.parcels.contains_key(&181));
-                assert!(
-                    matches!(owned_b.parcels[&181].source, Source::Transfer { sender, .. } if sender == a)
-                );
+                assert!(matches!(owned_b.parcels[&181].source, Source::Transfer { sender, .. } if sender == a));
                 assert_eq!(owned_b.parcels[&181].timestamp, fixture("two").timestamp);
             }
             if name == "three" {
-                assert_eq!(
-                    owned_b.parcels[&181].height, 2,
-                    "painting must preserve receipt"
-                );
+                assert_eq!(owned_b.parcels[&181].height, 2, "painting must preserve receipt");
             }
         }
-        assert_eq!(
-            owned_a.parcels[&181].source,
-            Source::Mining,
-            "reorg must remove orphaned transfer receipt"
-        );
+        assert_eq!(owned_a.parcels[&181].source, Source::Mining, "reorg must remove orphaned transfer receipt");
         assert_eq!(owned_a.parcels[&181].height, 1);
         assert!(!owned_b.parcels.contains_key(&181));
         let mut recovered = Ownership::default();
         recovered.update(&chain, a);
-        assert_eq!(
-            recovered.parcels, owned_a.parcels,
-            "late join reconstructs dates"
-        );
+        assert_eq!(recovered.parcels, owned_a.parcels, "late join reconstructs dates");
     }
     #[test]
     fn timestamp_format_handles_protocol_extremes() {
@@ -216,14 +176,7 @@ mod tests {
         // Receipt derivation runs after validation; these synthetic entries
         // isolate event ordering without spending proof-of-work on unit tests.
         let mut entry = Entry {
-            block: Block {
-                previous: chain.tip,
-                height: 2,
-                miner: b,
-                timestamp: 1_700_000_002,
-                nonce: 0,
-                transactions: vec![tx.clone()],
-            },
+            block: Block { previous: chain.tip, height: 2, miner: b, timestamp: 1_700_000_002, nonce: 0, transactions: vec![tx.clone()] },
             state: parent.state.clone(),
         };
         owned.apply(entry.block.hash(), &entry, &parent, a);
@@ -235,8 +188,6 @@ mod tests {
         entry.block.transactions = vec![outbound, inbound];
         owned.apply(entry.block.hash(), &entry, &parent, a);
         assert_eq!(owned.parcels[&181].timestamp, 1_700_000_002);
-        assert!(
-            matches!(owned.parcels[&181].source, Source::Transfer { sender, .. } if sender == b)
-        );
+        assert!(matches!(owned.parcels[&181].source, Source::Transfer { sender, .. } if sender == b));
     }
 }

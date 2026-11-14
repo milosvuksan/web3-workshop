@@ -15,11 +15,7 @@ pub(super) enum TransferAction {
 
 impl TransferMenu {
     pub fn new(parcel: usize) -> Self {
-        Self {
-            parcel,
-            selected: 0,
-            error: None,
-        }
+        Self { parcel, selected: 0, error: None }
     }
 
     pub fn input(&mut self, key: KeyEvent, peers: &[Value], owned: bool) -> TransferAction {
@@ -42,10 +38,7 @@ impl TransferMenu {
                     if peer["status"] == "Connected"
                         && let Some(identity) = peer["identity"].as_str()
                     {
-                        return TransferAction::Submit(format!(
-                            "transfer {} {identity}",
-                            self.parcel
-                        ));
+                        return TransferAction::Submit(format!("transfer {} {identity}", self.parcel));
                     }
                     self.error = Some(if peer["compatibility"] == "grupa1-luka" {
                         "Grupa 1 does not exchange identities. Press m to enter a public key; this transfers a native parcel.".into()
@@ -53,10 +46,7 @@ impl TransferMenu {
                         "Connect to this node to learn its identity before transferring.".into()
                     });
                 } else {
-                    self.error = Some(
-                        "No saved nodes. Add one on the Network page or press m for manual entry."
-                            .into(),
-                    );
+                    self.error = Some("No saved nodes. Add one on the Network page or press m for manual entry.".into());
                 }
                 TransferAction::Continue
             }
@@ -74,16 +64,8 @@ impl TransferMenu {
     pub fn draw(&self, frame: &mut Frame, peers: &[Value]) {
         let area = centered(frame.area(), 80, 16);
         frame.render_widget(Clear, area);
-        frame.render_widget(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(" Transfer parcel {} ", self.parcel)),
-            area,
-        );
-        let inner = area.inner(ratatui::layout::Margin {
-            horizontal: 1,
-            vertical: 1,
-        });
+        frame.render_widget(Block::default().borders(Borders::ALL).title(format!(" Transfer parcel {} ", self.parcel)), area);
+        let inner = area.inner(ratatui::layout::Margin { horizontal: 1, vertical: 1 });
         let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(3)]).split(inner);
         let items: Vec<_> = peers
             .iter()
@@ -97,16 +79,10 @@ impl TransferMenu {
             })
             .collect();
         if items.is_empty() {
-            frame.render_widget(
-                Paragraph::new("No saved nodes. Add nodes on the Network page.")
-                    .wrap(Wrap { trim: false }),
-                rows[0],
-            );
+            frame.render_widget(Paragraph::new("No saved nodes. Add nodes on the Network page.").wrap(Wrap { trim: false }), rows[0]);
         } else {
             frame.render_stateful_widget(
-                List::new(items)
-                    .highlight_symbol("› ")
-                    .highlight_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
+                List::new(items).highlight_symbol("› ").highlight_style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
                 rows[0],
                 &mut ListState::default().with_selected(Some(self.selected.min(peers.len() - 1))),
             );
@@ -127,26 +103,14 @@ mod tests {
             serde_json::json!({"alias":"Offline", "status":"Offline", "identity":"old"}),
             serde_json::json!({"alias":"Ready", "status":"Connected", "identity":"recipient"}),
         ];
-        assert!(matches!(
-            menu.input(key(KeyCode::Enter), &peers, true),
-            TransferAction::Continue
-        ));
+        assert!(matches!(menu.input(key(KeyCode::Enter), &peers, true), TransferAction::Continue));
         menu.input(key(KeyCode::Down), &peers, true);
-        assert!(matches!(
-            menu.input(key(KeyCode::Enter), &peers, false),
-            TransferAction::Continue
-        ));
+        assert!(matches!(menu.input(key(KeyCode::Enter), &peers, false), TransferAction::Continue));
         assert!(
             matches!(menu.input(key(KeyCode::Enter), &peers, true), TransferAction::Submit(command) if command == "transfer 42 recipient")
         );
         peers[1]["status"] = "Retrying".into();
-        assert!(matches!(
-            menu.input(key(KeyCode::Enter), &peers, true),
-            TransferAction::Continue
-        ));
-        assert!(matches!(
-            menu.input(key(KeyCode::Char('m')), &peers, true),
-            TransferAction::Manual(42)
-        ));
+        assert!(matches!(menu.input(key(KeyCode::Enter), &peers, true), TransferAction::Continue));
+        assert!(matches!(menu.input(key(KeyCode::Char('m')), &peers, true), TransferAction::Manual(42)));
     }
 }

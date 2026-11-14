@@ -7,88 +7,31 @@ use baneworkshop::{
 use ed25519_dalek::SigningKey;
 use serde_json::json;
 use std::sync::atomic::AtomicBool;
-fn child(
-    parent: &Block,
-    miner: &SigningKey,
-    transactions: Vec<Transaction>,
-    timestamp: u64,
-) -> Block {
-    let block = Block {
-        previous: parent.hash(),
-        height: parent.height + 1,
-        miner: crypto::public_key(miner),
-        timestamp,
-        nonce: 0,
-        transactions,
-    };
+fn child(parent: &Block, miner: &SigningKey, transactions: Vec<Transaction>, timestamp: u64) -> Block {
+    let block =
+        Block { previous: parent.hash(), height: parent.height + 1, miner: crypto::public_key(miner), timestamp, nonce: 0, transactions };
     let found = mining::mine(block, &AtomicBool::new(false)).unwrap();
-    eprintln!(
-        "mined fixture height {}: {} nonce {}",
-        found.height,
-        found.hash(),
-        found.nonce
-    );
+    eprintln!("mined fixture height {}: {} nonce {}", found.height, found.hash(), found.nonce);
     found
 }
 fn tx(key: &SigningKey, parcel: u16, counter: u64, action: Action) -> Transaction {
-    let mut tx = Transaction {
-        parcel,
-        counter,
-        sender: Bytes::default(),
-        action,
-        signature: Bytes::default(),
-    };
+    let mut tx = Transaction { parcel, counter, sender: Bytes::default(), action, signature: Bytes::default() };
     crypto::sign(&mut tx, key);
     tx
 }
 fn main() {
-    let a_seed: Bytes<32> = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
-        .parse()
-        .unwrap();
+    let a_seed: Bytes<32> = "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60".parse().unwrap();
     let a = SigningKey::from_bytes(&a_seed.0);
     let b = SigningKey::from_bytes(&[2; 32]);
     let genesis = genesis();
     let one = child(&genesis, &a, vec![], 1_700_000_000);
     let mut state = State::default();
     let parcel = state.reward(one.hash(), one.timestamp, one.miner).unwrap();
-    let paint = tx(
-        &a,
-        parcel,
-        0,
-        Action::Paint {
-            color: Bytes([255, 128, 0]),
-        },
-    );
-    let transfer = tx(
-        &a,
-        parcel,
-        1,
-        Action::Transfer {
-            recipient: crypto::public_key(&b),
-        },
-    );
-    let wrong = tx(
-        &b,
-        parcel,
-        1,
-        Action::Paint {
-            color: Bytes([1, 2, 3]),
-        },
-    );
-    let two = child(
-        &one,
-        &a,
-        vec![paint.clone(), transfer.clone()],
-        1_700_000_002,
-    );
-    let bpaint = tx(
-        &b,
-        parcel,
-        2,
-        Action::Paint {
-            color: Bytes([0, 0, 255]),
-        },
-    );
+    let paint = tx(&a, parcel, 0, Action::Paint { color: Bytes([255, 128, 0]) });
+    let transfer = tx(&a, parcel, 1, Action::Transfer { recipient: crypto::public_key(&b) });
+    let wrong = tx(&b, parcel, 1, Action::Paint { color: Bytes([1, 2, 3]) });
+    let two = child(&one, &a, vec![paint.clone(), transfer.clone()], 1_700_000_002);
+    let bpaint = tx(&b, parcel, 2, Action::Paint { color: Bytes([0, 0, 255]) });
     let three = child(&two, &b, vec![bpaint.clone()], 1_700_000_004);
     let fork2 = child(&one, &b, vec![], 1_700_000_003);
     let fork3 = child(&fork2, &b, vec![], 1_700_000_005);
@@ -106,9 +49,5 @@ fn main() {
         "fork2":block_vector(&fork2),"fork3":block_vector(&fork3),"fork4":block_vector(&fork4),
         "invalid":block_vector(&invalid),"duplicate":block_vector(&duplicate),
         "reward_one":parcel,"occupied_retry":{"hash":collision,"timestamp":0,"occupied":[parcel],"reward":occupied}});
-    std::fs::write(
-        "tests/fixtures/prototype-v1.json",
-        serde_json::to_vec_pretty(&result).unwrap(),
-    )
-    .unwrap();
+    std::fs::write("tests/fixtures/prototype-v1.json", serde_json::to_vec_pretty(&result).unwrap()).unwrap();
 }

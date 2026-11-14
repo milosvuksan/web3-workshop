@@ -5,10 +5,7 @@ pub struct Lag {
 }
 impl Lag {
     pub fn new(enabled: bool, seed: u64) -> Self {
-        Self {
-            enabled,
-            state: seed.max(1),
-        }
+        Self { enabled, state: seed.max(1) }
     }
     fn next(&mut self) -> u64 {
         self.state ^= self.state << 13;

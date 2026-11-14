@@ -31,39 +31,21 @@ pub enum Command {
 }
 pub fn transaction(line: &str, counter: u64) -> Result<Transaction> {
     let args: Vec<_> = line.split_whitespace().collect();
-    let parcel = args
-        .get(1)
-        .ok_or(crate::Error::Invalid("missing parcel"))?
-        .parse()
-        .map_err(|_| crate::Error::Invalid("invalid parcel"))?;
-    let payload = args
-        .get(2)
-        .ok_or(crate::Error::Invalid("missing color/recipient"))?;
+    let parcel =
+        args.get(1).ok_or(crate::Error::Invalid("missing parcel"))?.parse().map_err(|_| crate::Error::Invalid("invalid parcel"))?;
+    let payload = args.get(2).ok_or(crate::Error::Invalid("missing color/recipient"))?;
     let action = match args.first().copied() {
-        Some("paint") => Action::Paint {
-            color: crate::colors::parse(payload)?,
-        },
-        Some("transfer") => Action::Transfer {
-            recipient: payload.parse()?,
-        },
+        Some("paint") => Action::Paint { color: crate::colors::parse(payload)? },
+        Some("transfer") => Action::Transfer { recipient: payload.parse()? },
         _ => return Err(crate::Error::Invalid("unknown transaction command")),
     };
     if args.len() != 3 {
         return Err(crate::Error::Invalid("expected command parcel payload"));
     }
-    Ok(Transaction {
-        parcel,
-        counter,
-        sender: Bytes::default(),
-        action,
-        signature: Bytes::default(),
-    })
+    Ok(Transaction { parcel, counter, sender: Bytes::default(), action, signature: Bytes::default() })
 }
 pub fn key(file: PathBuf) -> Result<()> {
-    println!(
-        "{}",
-        crypto::public_key(&crypto::load_or_create_key(&file)?)
-    );
+    println!("{}", crypto::public_key(&crypto::load_or_create_key(&file)?));
     Ok(())
 }
 pub const HELP: &str = "status | identity | owned | paint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | mining on|off | threads COUNT|all | difficulty BITS | port PORT | peer add IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer remove IP[:PORT] | grupa1 status | grupa1 mining on|off | grupa1 paint PARCEL COLOR | grupa1 transfer PARCEL PUBLIC_KEY | network on|off | export [PATH.ppm] | quit";

@@ -5,25 +5,12 @@ pub const MAX_LINE: usize = 262_144;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Message {
-    Hello {
-        version: u64,
-        genesis: Hash,
-        identity: PublicKey,
-    },
+    Hello { version: u64, genesis: Hash, identity: PublicKey },
     GetTip {},
-    Tip {
-        hash: Hash,
-        height: u64,
-    },
-    GetBlock {
-        hash: Hash,
-    },
-    Block {
-        block: Block,
-    },
-    Transaction {
-        transaction: Transaction,
-    },
+    Tip { hash: Hash, height: u64 },
+    GetBlock { hash: Hash },
+    Block { block: Block },
+    Transaction { transaction: Transaction },
 }
 /// Bounded incremental framing, including partial reads and coalesced messages.
 #[derive(Default)]

@@ -35,10 +35,7 @@ struct Step {
 }
 impl Step {
     fn new(program: &str, args: &[&str]) -> Self {
-        Self {
-            program: program.into(),
-            args: args.iter().map(|s| (*s).into()).collect(),
-        }
+        Self { program: program.into(), args: args.iter().map(|s| (*s).into()).collect() }
     }
     fn display(&self) -> String {
         format!("{} {}", self.program, self.args.join(" "))
@@ -51,10 +48,7 @@ fn python(script: &str) -> Step {
     Step::new("python3", &[script])
 }
 fn release_check(script: &str) -> Step {
-    Step::new(
-        "python3",
-        &[script, "--binary", "target/release/baneworkshop"],
-    )
+    Step::new("python3", &[script, "--binary", "target/release/baneworkshop"])
 }
 fn build() -> Step {
     cargo(&["build", "--release", "--locked"])
@@ -63,14 +57,7 @@ fn plan(task: usize) -> Vec<Step> {
     match task {
         0 => vec![
             cargo(&["fmt", "--check"]),
-            cargo(&[
-                "clippy",
-                "--locked",
-                "--all-targets",
-                "--",
-                "-D",
-                "warnings",
-            ]),
+            cargo(&["clippy", "--locked", "--all-targets", "--", "-D", "warnings"]),
             cargo(&["test", "--locked", "--all-targets"]),
             build(),
             python("scripts/verify-vectors.py"),
@@ -84,21 +71,9 @@ fn plan(task: usize) -> Vec<Step> {
             python("scripts/workshop-demo"),
         ],
         1 => vec![cargo(&["test", "--locked", "--all-targets"])],
-        2..=5 => vec![cargo(&[
-            "test",
-            "--locked",
-            "--test",
-            ["consensus", "network", "conformance", "recovery"][task - 2],
-        ])],
+        2..=5 => vec![cargo(&["test", "--locked", "--test", ["consensus", "network", "conformance", "recovery"][task - 2]])],
         6 => vec![cargo(&["fmt", "--check"])],
-        7 => vec![cargo(&[
-            "clippy",
-            "--locked",
-            "--all-targets",
-            "--",
-            "-D",
-            "warnings",
-        ])],
+        7 => vec![cargo(&["clippy", "--locked", "--all-targets", "--", "-D", "warnings"])],
         8 => vec![python("scripts/verify-vectors.py")],
         9 => vec![build()],
         10 => vec![
@@ -110,13 +85,7 @@ fn plan(task: usize) -> Vec<Step> {
         ],
         11..=13 => vec![
             cargo(&["build", "--locked"]),
-            python(
-                [
-                    "scripts/test-shutdown.py",
-                    "scripts/test-controls.py",
-                    "scripts/test-tui.py",
-                ][task - 11],
-            ),
+            python(["scripts/test-shutdown.py", "scripts/test-controls.py", "scripts/test-tui.py"][task - 11]),
         ],
         14 => vec![build(), python("scripts/workshop-demo")],
         15 => vec![cargo(&["run", "--release", "--locked", "--", "benchmark"])],
@@ -140,9 +109,7 @@ pub struct Runner {
 impl Default for Runner {
     fn default() -> Self {
         Self {
-            root: std::env::var_os("PIXEL_WORKSPACE")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR"))),
+            root: std::env::var_os("PIXEL_WORKSPACE").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR"))),
             output: VecDeque::new(),
             status: "Select a check and press Enter".into(),
             log_path: None,
@@ -162,14 +129,10 @@ impl Runner {
     }
     pub fn start(&mut self, task: usize, data_dir: &Path) -> Result<()> {
         if self.running() {
-            return Err(crate::Error::Invalid(
-                "a diagnostic is already running; cancel it first",
-            ));
+            return Err(crate::Error::Invalid("a diagnostic is already running; cancel it first"));
         }
         if !self.root.join("Cargo.toml").is_file() {
-            return Err(crate::Error::Invalid(
-                "source workspace missing; set PIXEL_WORKSPACE to the repository",
-            ));
+            return Err(crate::Error::Invalid("source workspace missing; set PIXEL_WORKSPACE to the repository"));
         }
         let steps = plan(task);
         if steps.is_empty() {
@@ -177,22 +140,10 @@ impl Runner {
         }
         let dir = data_dir.join("diagnostics");
         std::fs::create_dir_all(&dir)?;
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis();
         self.sequence += 1;
-        let path = dir.join(format!(
-            "{stamp}-{}-{}.log",
-            std::process::id(),
-            self.sequence
-        ));
-        self.log = Some(
-            OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&path)?,
-        );
+        let path = dir.join(format!("{stamp}-{}-{}.log", std::process::id(), self.sequence));
+        self.log = Some(OpenOptions::new().create_new(true).write(true).open(&path)?);
         self.reader = Some(File::open(&path)?);
         self.log_path = Some(path);
         self.output.clear();
@@ -203,10 +154,7 @@ impl Runner {
     }
     fn next(&mut self) -> Result<()> {
         let Some(step) = self.steps.pop_front() else {
-            self.status = format!(
-                "PASS • completed in {:.1}s",
-                self.started.map_or(0.0, |s| s.elapsed().as_secs_f64())
-            );
+            self.status = format!("PASS • completed in {:.1}s", self.started.map_or(0.0, |s| s.elapsed().as_secs_f64()));
             if let Some(log) = &mut self.log {
                 writeln!(log, "\n{}", self.status)?;
             }
@@ -271,9 +219,7 @@ impl Runner {
                 self.output_line(line);
             }
             // Bound an unterminated line too, while retaining the full file.
-            if self.partial.len() > 16 * 1024
-                || (count == 0 && !self.running() && !self.partial.is_empty())
-            {
+            if self.partial.len() > 16 * 1024 || (count == 0 && !self.running() && !self.partial.is_empty()) {
                 let partial = std::mem::take(&mut self.partial);
                 self.output_line(&String::from_utf8_lossy(&partial));
             }
@@ -284,12 +230,7 @@ impl Runner {
         Ok(())
     }
     fn output_line(&mut self, line: &str) {
-        self.output.push_back(
-            line.chars()
-                .filter(|c| !c.is_control() || *c == '\t')
-                .take(4000)
-                .collect(),
-        );
+        self.output.push_back(line.chars().filter(|c| !c.is_control() || *c == '\t').take(4000).collect());
     }
     pub fn cancel(&mut self) {
         self.steps.clear();
@@ -325,11 +266,7 @@ mod tests {
         for task in 0..TASKS.len() {
             assert!(!plan(task).is_empty());
         }
-        let suite = plan(0)
-            .iter()
-            .map(Step::display)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let suite = plan(0).iter().map(Step::display).collect::<Vec<_>>().join("\n");
         for script in [
             "test-shutdown.py",
             "test-controls.py",
@@ -353,10 +290,7 @@ mod process_tests {
         let root = std::env::temp_dir().join(format!(
             "pixel-runner-{}-{}",
             std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
         ));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("output.log");
@@ -389,10 +323,8 @@ mod process_tests {
     }
     #[test]
     fn failure_captures_both_streams_and_skips_remaining_steps() {
-        let (mut runner, root) = runner(vec![
-            Step::new("sh", &["-c", "echo stdout; echo stderr >&2; exit 7"]),
-            Step::new("sh", &["-c", "echo should-not-run"]),
-        ]);
+        let (mut runner, root) =
+            runner(vec![Step::new("sh", &["-c", "echo stdout; echo stderr >&2; exit 7"]), Step::new("sh", &["-c", "echo should-not-run"])]);
         until(&mut runner, |r| !r.running());
         assert!(runner.status.starts_with("FAILED"));
         let log = std::fs::read_to_string(root.join("output.log")).unwrap();
@@ -403,17 +335,11 @@ mod process_tests {
     }
     #[test]
     fn cancellation_stops_descendants_and_runner_can_report_success() {
-        let (mut runner, root) = runner(vec![Step::new(
-            "sh",
-            &["-c", "(echo READY; sleep 0.3; touch leaked) & wait"],
-        )]);
+        let (mut runner, root) = runner(vec![Step::new("sh", &["-c", "(echo READY; sleep 0.3; touch leaked) & wait"])]);
         until(&mut runner, |r| r.output.iter().any(|s| s == "READY"));
         runner.cancel();
         thread::sleep(Duration::from_millis(400));
-        assert!(
-            !root.join("leaked").exists(),
-            "descendant survived cancellation"
-        );
+        assert!(!root.join("leaked").exists(), "descendant survived cancellation");
         assert!(runner.status.starts_with("CANCELLED"));
         runner.steps = vec![Step::new("sh", &["-c", "echo recovered"])].into();
         runner.next().unwrap();

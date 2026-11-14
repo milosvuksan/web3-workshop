@@ -40,72 +40,29 @@ impl Sender {
         let Some(delay) = schedule.0.schedule() else {
             return Ok(());
         };
-        let permit = self
-            .slots
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| "send queue full")?;
+        let permit = self.slots.clone().try_acquire_owned().map_err(|_| "send queue full")?;
         let when = (Instant::now() + Duration::from_millis(delay)).max(schedule.1);
         schedule.1 = when;
-        self.sender
-            .try_send(Queued {
-                message,
-                when,
-                _permit: permit,
-            })
-            .map_err(|_| "closed session")
+        self.sender.try_send(Queued { message, when, _permit: permit }).map_err(|_| "closed session")
     }
 }
 pub(crate) fn outbox(enabled: bool, seed: u64) -> (Sender, mpsc::Receiver<Queued>) {
     let (sender, receiver) = mpsc::channel(QUEUE);
-    (
-        Sender {
-            sender,
-            schedule: Mutex::new((Lag::new(enabled, seed), Instant::now())),
-            slots: Arc::new(Semaphore::new(QUEUE)),
-        },
-        receiver,
-    )
+    (Sender { sender, schedule: Mutex::new((Lag::new(enabled, seed), Instant::now())), slots: Arc::new(Semaphore::new(QUEUE)) }, receiver)
 }
 pub enum Event {
-    Connected {
-        id: u64,
-        sender: Sender,
-        address: SocketAddr,
-        close: oneshot::Sender<()>,
-    },
-    Message {
-        id: u64,
-        message: Message,
-    },
-    Disconnected {
-        id: u64,
-    },
-    Mined {
-        generation: u64,
-        block: crate::protocol::Block,
-    },
+    Connected { id: u64, sender: Sender, address: SocketAddr, close: oneshot::Sender<()> },
+    Message { id: u64, message: Message },
+    Disconnected { id: u64 },
+    Mined { generation: u64, block: crate::protocol::Block },
 }
 async fn connection(
-    stream: impl AsyncRead + AsyncWrite + Unpin,
-    address: SocketAddr,
-    events: mpsc::Sender<Event>,
-    enabled: bool,
-    seed: u64,
+    stream: impl AsyncRead + AsyncWrite + Unpin, address: SocketAddr, events: mpsc::Sender<Event>, enabled: bool, seed: u64,
 ) {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let (sender, mut receiver) = outbox(enabled, seed ^ id);
     let (close, mut closed) = oneshot::channel();
-    if events
-        .send(Event::Connected {
-            id,
-            sender,
-            close,
-            address,
-        })
-        .await
-        .is_err()
-    {
+    if events.send(Event::Connected { id, sender, close, address }).await.is_err() {
         return;
     }
     {
@@ -117,10 +74,7 @@ async fn connection(
                     break;
                 };
                 bytes.push(b'\n');
-                if !matches!(
-                    timeout(Duration::from_secs(5), write.write_all(&bytes)).await,
-                    Ok(Ok(()))
-                ) {
+                if !matches!(timeout(Duration::from_secs(5), write.write_all(&bytes)).await, Ok(Ok(()))) {
                     break;
                 }
             }
@@ -186,24 +140,15 @@ impl Drop for Network {
     }
 }
 pub async fn start(
-    listen: SocketAddr,
-    peers: Vec<SocketAddr>,
-    events: mpsc::Sender<Event>,
-    enabled: bool,
-    seed: u64,
+    listen: SocketAddr, peers: Vec<SocketAddr>, events: mpsc::Sender<Event>, enabled: bool, seed: u64,
     discovery: Option<super::discovery::Discovery>,
 ) -> crate::Result<Network> {
     start_compatible(listen, peers, events, enabled, seed, discovery, None).await
 }
 
 pub async fn start_compatible(
-    listen: SocketAddr,
-    peers: Vec<SocketAddr>,
-    events: mpsc::Sender<Event>,
-    enabled: bool,
-    seed: u64,
-    discovery: Option<super::discovery::Discovery>,
-    compatibility: Option<super::compat::Config>,
+    listen: SocketAddr, peers: Vec<SocketAddr>, events: mpsc::Sender<Event>, enabled: bool, seed: u64,
+    discovery: Option<super::discovery::Discovery>, compatibility: Option<super::compat::Config>,
 ) -> crate::Result<Network> {
     let listener = TcpListener::bind(listen).await?;
     let tcp_port = listener.local_addr()?.port();
@@ -238,10 +183,8 @@ pub async fn start_compatible(
                 let _permit = permit;
                 if let Some(config) = compatibility {
                     let mut prefix = [0; 1];
-                    if matches!(
-                        timeout(Duration::from_secs(5), stream.peek(&mut prefix)).await,
-                        Ok(Ok(1))
-                    ) && matches!(prefix[0], b'G' | b'P' | b'H' | b'D' | b'O')
+                    if matches!(timeout(Duration::from_secs(5), stream.peek(&mut prefix)).await, Ok(Ok(1)))
+                        && matches!(prefix[0], b'G' | b'P' | b'H' | b'D' | b'O')
                     {
                         super::compat::http::serve(stream, config.state).await;
                         return;
@@ -263,12 +206,25 @@ pub async fn start_compatible(
         let mut bytes = [0; 1024];
         loop {
             let compatibility = outgoing_compatibility.borrow().clone();
-            let desired: std::collections::BTreeSet<_> = configured.borrow_and_update().iter().copied()
-                .chain(discovered.iter().copied()).filter(|address| *address != listen)
-                .filter(|address| !compatibility.as_ref().is_some_and(|c| c.peers.iter().any(|p| p.address == *address && p.compatibility != crate::settings::CompatibilityProfile::Native)))
+            let desired: std::collections::BTreeSet<_> = configured
+                .borrow_and_update()
+                .iter()
+                .copied()
+                .chain(discovered.iter().copied())
+                .filter(|address| *address != listen)
+                .filter(|address| {
+                    !compatibility.as_ref().is_some_and(|c| {
+                        c.peers.iter().any(|p| p.address == *address && p.compatibility != crate::settings::CompatibilityProfile::Native)
+                    })
+                })
                 .collect();
             addresses.retain(|address, task: &mut tokio::task::AbortHandle| {
-                if desired.contains(address) { true } else { task.abort(); false }
+                if desired.contains(address) {
+                    true
+                } else {
+                    task.abort();
+                    false
+                }
             });
             for address in desired {
                 addresses.entry(address).or_insert_with(|| outgoing.spawn(reconnect(address, events.clone(), enabled, seed)));
@@ -317,9 +273,7 @@ pub async fn start_compatible(
                 .map(|c| {
                     c.peers
                         .iter()
-                        .filter(|p| {
-                            p.compatibility == crate::settings::CompatibilityProfile::Grupa1Luka
-                        })
+                        .filter(|p| p.compatibility == crate::settings::CompatibilityProfile::Grupa1Luka)
                         .map(|p| p.address)
                         .filter(|address| *address != listen)
                         .collect()
@@ -334,16 +288,9 @@ pub async fn start_compatible(
                 }
             });
             if let Some(config) = &config {
-                config
-                    .state
-                    .peers
-                    .lock()
-                    .unwrap()
-                    .retain(|address, _| desired.contains(address));
+                config.state.peers.lock().unwrap().retain(|address, _| desired.contains(address));
                 for address in desired {
-                    active.entry(address).or_insert_with(|| {
-                        polling.spawn(super::compat::http::poll(address, config.state.clone()))
-                    });
+                    active.entry(address).or_insert_with(|| polling.spawn(super::compat::http::poll(address, config.state.clone())));
                 }
             }
             tokio::select! {
@@ -355,12 +302,7 @@ pub async fn start_compatible(
         }
         polling.shutdown().await;
     }));
-    Ok(Network {
-        tasks,
-        stop,
-        peers: peer_updates,
-        compatibility: compat_updates,
-    })
+    Ok(Network { tasks, stop, peers: peer_updates, compatibility: compat_updates })
 }
 
 async fn reconnect(peer: SocketAddr, events: mpsc::Sender<Event>, enabled: bool, seed: u64) {
@@ -411,19 +353,8 @@ mod tests {
     async fn outgoing_traffic_does_not_reset_the_receive_idle_timeout() {
         let (stream, mut remote) = tokio::io::duplex(4096);
         let (events, mut receiver) = mpsc::channel(8);
-        let task = tokio::spawn(connection(
-            stream,
-            "127.0.0.1:1".parse().unwrap(),
-            events,
-            false,
-            1,
-        ));
-        let Event::Connected {
-            sender,
-            close: _close,
-            ..
-        } = receiver.recv().await.unwrap()
-        else {
+        let task = tokio::spawn(connection(stream, "127.0.0.1:1".parse().unwrap(), events, false, 1));
+        let Event::Connected { sender, close: _close, .. } = receiver.recv().await.unwrap() else {
             panic!("connection");
         };
         for _ in 0..14 {
@@ -442,19 +373,8 @@ mod tests {
     async fn partial_reads_reset_the_idle_timeout() {
         let (stream, mut remote) = tokio::io::duplex(4096);
         let (events, mut receiver) = mpsc::channel(8);
-        let task = tokio::spawn(connection(
-            stream,
-            "127.0.0.1:1".parse().unwrap(),
-            events,
-            false,
-            1,
-        ));
-        let Event::Connected {
-            sender: _sender,
-            close: _close,
-            ..
-        } = receiver.recv().await.unwrap()
-        else {
+        let task = tokio::spawn(connection(stream, "127.0.0.1:1".parse().unwrap(), events, false, 1));
+        let Event::Connected { sender: _sender, close: _close, .. } = receiver.recv().await.unwrap() else {
             panic!("connection");
         };
         tokio::time::advance(Duration::from_secs(20)).await;
@@ -470,13 +390,7 @@ mod tests {
     async fn removing_session_closes_transport_without_draining_lag_queue() {
         let (stream, mut remote) = tokio::io::duplex(4096);
         let (events, mut receiver) = mpsc::channel(16);
-        let task = tokio::spawn(connection(
-            stream,
-            "127.0.0.1:1".parse().unwrap(),
-            events,
-            true,
-            42,
-        ));
+        let task = tokio::spawn(connection(stream, "127.0.0.1:1".parse().unwrap(), events, true, 42));
         let Event::Connected { sender, close, .. } = receiver.recv().await.unwrap() else {
             panic!("expected connection");
         };
@@ -485,15 +399,9 @@ mod tests {
         }
         drop(sender);
         drop(close);
-        timeout(Duration::from_millis(500), task)
-            .await
-            .unwrap()
-            .unwrap();
+        timeout(Duration::from_millis(500), task).await.unwrap().unwrap();
         let mut data = Vec::new();
-        timeout(Duration::from_millis(500), remote.read_to_end(&mut data))
-            .await
-            .unwrap()
-            .unwrap();
+        timeout(Duration::from_millis(500), remote.read_to_end(&mut data)).await.unwrap().unwrap();
         assert!(data.len() < QUEUE * b"{\"type\":\"get_tip\"}\n".len());
     }
 
@@ -501,74 +409,31 @@ mod tests {
     async fn session_cancellation_interrupts_coordinator_backpressure() {
         let (stream, mut remote) = tokio::io::duplex(4096);
         let (events, mut receiver) = mpsc::channel(1);
-        let task = tokio::spawn(connection(
-            stream,
-            "127.0.0.1:1".parse().unwrap(),
-            events,
-            false,
-            1,
-        ));
-        let Event::Connected {
-            sender: _sender,
-            close,
-            ..
-        } = receiver.recv().await.unwrap()
-        else {
+        let task = tokio::spawn(connection(stream, "127.0.0.1:1".parse().unwrap(), events, false, 1));
+        let Event::Connected { sender: _sender, close, .. } = receiver.recv().await.unwrap() else {
             panic!("expected connection");
         };
-        remote
-            .write_all(b"{\"type\":\"get_tip\"}\n{\"type\":\"get_tip\"}\n")
-            .await
-            .unwrap();
+        remote.write_all(b"{\"type\":\"get_tip\"}\n{\"type\":\"get_tip\"}\n").await.unwrap();
         tokio::task::yield_now().await;
         drop(close);
         let mut byte = [0];
-        assert_eq!(
-            timeout(Duration::from_millis(500), remote.read(&mut byte))
-                .await
-                .unwrap()
-                .unwrap(),
-            0
-        );
+        assert_eq!(timeout(Duration::from_millis(500), remote.read(&mut byte)).await.unwrap().unwrap(), 0);
         drop(receiver);
-        timeout(Duration::from_millis(500), task)
-            .await
-            .unwrap()
-            .unwrap();
+        timeout(Duration::from_millis(500), task).await.unwrap().unwrap();
     }
     #[tokio::test]
     async fn transport_closes_before_backpressured_disconnect_notification() {
         let (stream, mut remote) = tokio::io::duplex(4096);
         let (events, mut receiver) = mpsc::channel(1);
-        let task = tokio::spawn(connection(
-            stream,
-            "127.0.0.1:1".parse().unwrap(),
-            events.clone(),
-            false,
-            1,
-        ));
-        let Event::Connected {
-            sender: _sender,
-            close,
-            ..
-        } = receiver.recv().await.unwrap()
-        else {
+        let task = tokio::spawn(connection(stream, "127.0.0.1:1".parse().unwrap(), events.clone(), false, 1));
+        let Event::Connected { sender: _sender, close, .. } = receiver.recv().await.unwrap() else {
             panic!("expected connection");
         };
         events.send(Event::Disconnected { id: 0 }).await.unwrap();
         drop(close);
         let mut byte = [0];
-        assert_eq!(
-            timeout(Duration::from_millis(500), remote.read(&mut byte))
-                .await
-                .unwrap()
-                .unwrap(),
-            0
-        );
+        assert_eq!(timeout(Duration::from_millis(500), remote.read(&mut byte)).await.unwrap().unwrap(), 0);
         drop(receiver);
-        timeout(Duration::from_millis(500), task)
-            .await
-            .unwrap()
-            .unwrap();
+        timeout(Duration::from_millis(500), task).await.unwrap().unwrap();
     }
 }

@@ -38,15 +38,7 @@ pub struct Transaction {
 }
 impl Transaction {
     pub fn signing_bytes(&self) -> Vec<u8> {
-        format!(
-            "{}|{}|{}|{}|{}",
-            self.kind.text(),
-            self.sender,
-            self.nonce,
-            self.parcel,
-            self.value
-        )
-        .into_bytes()
+        format!("{}|{}|{}|{}|{}", self.kind.text(), self.sender, self.nonce, self.parcel, self.value).into_bytes()
     }
     pub fn sign(&mut self, key: &SigningKey) {
         self.sender = crypto::public_key(key);
@@ -66,10 +58,7 @@ impl Transaction {
         }
         ed25519_dalek::VerifyingKey::from_bytes(&self.sender.0)
             .map_err(|_| Error::Invalid("invalid Grupa 1 public key"))?
-            .verify_strict(
-                &self.signing_bytes(),
-                &ed25519_dalek::Signature::from_bytes(&self.signature.0),
-            )
+            .verify_strict(&self.signing_bytes(), &ed25519_dalek::Signature::from_bytes(&self.signature.0))
             .map_err(|_| Error::Invalid("invalid Grupa 1 signature"))
     }
     pub fn id(&self) -> Hash {
@@ -92,28 +81,13 @@ pub struct Block {
 }
 impl Block {
     pub fn genesis() -> Self {
-        Self {
-            height: 0,
-            prev_hash: GENESIS,
-            miner: GENESIS,
-            nonce: 0,
-            transactions: vec![],
-        }
+        Self { height: 0, prev_hash: GENESIS, miner: GENESIS, nonce: 0, transactions: vec![] }
     }
     pub fn hash(&self) -> Hash {
-        if self.height == 0
-            && self.prev_hash == GENESIS
-            && self.miner == GENESIS
-            && self.nonce == 0
-            && self.transactions.is_empty()
-        {
+        if self.height == 0 && self.prev_hash == GENESIS && self.miner == GENESIS && self.nonce == 0 && self.transactions.is_empty() {
             return GENESIS;
         }
-        let mut bytes = format!(
-            "{}|{}|{}|{}",
-            self.height, self.prev_hash, self.miner, self.nonce
-        )
-        .into_bytes();
+        let mut bytes = format!("{}|{}|{}|{}", self.height, self.prev_hash, self.miner, self.nonce).into_bytes();
         for tx in &self.transactions {
             bytes.push(b'\n');
             bytes.extend(tx.canonical_bytes());
@@ -148,10 +122,7 @@ pub struct State {
 }
 impl Default for State {
     fn default() -> Self {
-        Self {
-            parcels: vec![Parcel::default(); 256],
-            nonces: BTreeMap::new(),
-        }
+        Self { parcels: vec![Parcel::default(); 256], nonces: BTreeMap::new() }
     }
 }
 impl State {
@@ -184,13 +155,7 @@ pub struct Ledger {
 impl Default for Ledger {
     fn default() -> Self {
         Self {
-            entries: BTreeMap::from([(
-                GENESIS,
-                Entry {
-                    block: Block::genesis(),
-                    state: State::default(),
-                },
-            )]),
+            entries: BTreeMap::from([(GENESIS, Entry { block: Block::genesis(), state: State::default() })]),
             tip: GENESIS,
             pending: vec![],
             waiting: BTreeMap::new(),
@@ -239,11 +204,7 @@ impl Ledger {
         }
         self.insert(block)?;
         loop {
-            let ready = self
-                .waiting
-                .iter()
-                .find(|(_, b)| self.entries.contains_key(&b.prev_hash))
-                .map(|(h, _)| *h);
+            let ready = self.waiting.iter().find(|(_, b)| self.entries.contains_key(&b.prev_hash)).map(|(h, _)| *h);
             let Some(hash) = ready else {
                 break;
             };
@@ -266,8 +227,7 @@ impl Ledger {
         if parcel.owner.is_none() {
             parcel.owner = Some(block.miner);
         }
-        let wins = block.height > self.head().block.height
-            || (block.height == self.head().block.height && hash > self.tip);
+        let wins = block.height > self.head().block.height || (block.height == self.head().block.height && hash > self.tip);
         let old_tip = self.tip;
         self.entries.insert(hash, Entry { block, state });
         if wins {
@@ -308,13 +268,7 @@ impl Ledger {
         path
     }
     pub fn candidate(&self, miner: PublicKey) -> Block {
-        Block {
-            height: self.head().block.height + 1,
-            prev_hash: self.tip,
-            miner,
-            nonce: 0,
-            transactions: self.pending.clone(),
-        }
+        Block { height: self.head().block.height + 1, prev_hash: self.tip, miner, nonce: 0, transactions: self.pending.clone() }
     }
     pub fn summary(&self, identity: PublicKey) -> serde_json::Value {
         serde_json::json!({"profile":"Grupa 1 - Luka", "genesis":GENESIS, "height":self.head().block.height, "hash":self.tip,
@@ -323,103 +277,68 @@ impl Ledger {
 }
 
 /// Uses this profile's decimal/LF hash format, never native mining bytes.
-pub fn start_miner(
-    block: Block,
-    ledger: std::sync::Arc<super::Compatibility>,
-) -> std::io::Result<crate::mining::Job> {
+pub fn start_miner(block: Block, ledger: std::sync::Arc<super::Compatibility>) -> std::io::Result<crate::mining::Job> {
     use std::sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     };
     let cancel = Arc::new(AtomicBool::new(false));
     let stop = cancel.clone();
-    let handle = std::thread::Builder::new()
-        .name("grupa1-miner".into())
-        .spawn(move || {
-            use sha2::{Digest, Sha256};
-            let mut block = block;
-            let prefix = Sha256::new().chain_update(
-                format!("{}|{}|{}|", block.height, block.prev_hash, block.miner).as_bytes(),
-            );
-            let mut suffix = vec![];
-            for tx in &block.transactions {
-                suffix.push(b'\n');
-                suffix.extend(tx.canonical_bytes());
+    let handle = std::thread::Builder::new().name("grupa1-miner".into()).spawn(move || {
+        use sha2::{Digest, Sha256};
+        let mut block = block;
+        let prefix = Sha256::new().chain_update(format!("{}|{}|{}|", block.height, block.prev_hash, block.miner).as_bytes());
+        let mut suffix = vec![];
+        for tx in &block.transactions {
+            suffix.push(b'\n');
+            suffix.extend(tx.canonical_bytes());
+        }
+        let mut digits = [0; 20];
+        while block.nonce <= MAX_INTEGER {
+            // Frequent cancellation also bounds shutdown time for large blocks.
+            if stop.load(Ordering::Relaxed) {
+                return;
             }
-            let mut digits = [0; 20];
-            while block.nonce <= MAX_INTEGER {
-                // Frequent cancellation also bounds shutdown time for large blocks.
-                if stop.load(Ordering::Relaxed) {
-                    return;
+            let mut value = block.nonce;
+            let mut start = digits.len();
+            loop {
+                start -= 1;
+                digits[start] = b'0' + (value % 10) as u8;
+                value /= 10;
+                if value == 0 {
+                    break;
                 }
-                let mut value = block.nonce;
-                let mut start = digits.len();
-                loop {
-                    start -= 1;
-                    digits[start] = b'0' + (value % 10) as u8;
-                    value /= 10;
-                    if value == 0 {
-                        break;
-                    }
-                }
-                let hash = Bytes(
-                    prefix
-                        .clone()
-                        .chain_update(&digits[start..])
-                        .chain_update(&suffix)
-                        .finalize()
-                        .into(),
-                );
-                if valid_pow(hash) {
-                    let mut ledger = ledger.ledger.lock().unwrap();
-                    if ledger.tip == block.prev_hash {
-                        let _ = ledger.accept(block);
-                    }
-                    return;
-                }
-                block.nonce += 1;
             }
-        })?;
-    Ok(crate::mining::Job {
-        cancel,
-        handles: vec![handle],
-    })
+            let hash = Bytes(prefix.clone().chain_update(&digits[start..]).chain_update(&suffix).finalize().into());
+            if valid_pow(hash) {
+                let mut ledger = ledger.ledger.lock().unwrap();
+                if ledger.tip == block.prev_hash {
+                    let _ = ledger.accept(block);
+                }
+                return;
+            }
+            block.nonce += 1;
+        }
+    })?;
+    Ok(crate::mining::Job { cancel, handles: vec![handle] })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     pub fn vector() -> Block {
-        Block {
-            height: 1,
-            prev_hash: GENESIS,
-            miner: Bytes([0x11; 32]),
-            nonce: 1426967,
-            transactions: vec![],
-        }
+        Block { height: 1, prev_hash: GENESIS, miner: Bytes([0x11; 32]), nonce: 1426967, transactions: vec![] }
     }
     #[test]
     fn supplied_vector_and_genesis() {
         let block = vector();
-        assert_eq!(
-            block.hash().to_string(),
-            "000008a6403b5a52eca437a0912dc7a1d788b2d0e093b3ee72667e1636a024df"
-        );
+        assert_eq!(block.hash().to_string(), "000008a6403b5a52eca437a0912dc7a1d788b2d0e093b3ee72667e1636a024df");
         let mut ledger = Ledger::default();
         assert_eq!(ledger.tip, GENESIS);
         assert_eq!(Block::genesis().hash(), GENESIS);
         assert_eq!(ledger.accept(block.clone()).unwrap(), 200);
         assert_eq!(ledger.head().state.parcels[223].owner, Some(block.miner));
-        assert_eq!(
-            ledger
-                .head()
-                .state
-                .parcels
-                .iter()
-                .filter(|p| p.owner.is_some())
-                .count(),
-            1
-        );
+        assert_eq!(ledger.head().state.parcels.iter().filter(|p| p.owner.is_some()).count(), 1);
         assert_eq!(ledger.accept(block).unwrap(), 200);
     }
     #[test]
@@ -431,19 +350,10 @@ mod tests {
         for parcel in [2, 3] {
             ledger.entries.get_mut(&GENESIS).unwrap().state.parcels[parcel].owner = Some(owner);
         }
-        let mut tx = Transaction {
-            kind: Kind::Paint,
-            sender: owner,
-            nonce: 0,
-            parcel: 2,
-            value: "aabbcc".into(),
-            signature: Signature::default(),
-        };
+        let mut tx =
+            Transaction { kind: Kind::Paint, sender: owner, nonce: 0, parcel: 2, value: "aabbcc".into(), signature: Signature::default() };
         tx.sign(&key);
-        assert_eq!(
-            String::from_utf8(tx.signing_bytes()).unwrap(),
-            format!("paint|{owner}|0|2|aabbcc")
-        );
+        assert_eq!(String::from_utf8(tx.signing_bytes()).unwrap(), format!("paint|{owner}|0|2|aabbcc"));
         ledger.admit(tx.clone()).unwrap();
         tx.parcel = 3;
         tx.sign(&key);
@@ -456,13 +366,9 @@ mod tests {
         assert_eq!(ledger.pending.len(), 2);
     }
     fn fixture(name: &str) -> Block {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../../../tests/fixtures/grupa1-luka.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(include_str!("../../../tests/fixtures/grupa1-luka.json")).unwrap();
         let block: Block = serde_json::from_value(vectors[name]["block"].clone()).unwrap();
-        assert_eq!(
-            block.hash().to_string(),
-            vectors[name]["hash"].as_str().unwrap()
-        );
+        assert_eq!(block.hash().to_string(), vectors[name]["hash"].as_str().unwrap());
         block
     }
     #[test]
@@ -478,10 +384,7 @@ mod tests {
         assert_eq!(ledger.tip, three.hash());
         assert!(ledger.waiting.is_empty());
         let state = &ledger.head().state;
-        assert_eq!(
-            state.parcels[parcel].owner,
-            Some(three.transactions[0].sender)
-        );
+        assert_eq!(state.parcels[parcel].owner, Some(three.transactions[0].sender));
         assert_eq!(state.parcels[parcel].color.to_string(), "123456");
         assert_eq!(state.nonces[&two.transactions[0].sender], 2);
         assert_eq!(state.nonces[&three.transactions[0].sender], 1);
@@ -534,9 +437,7 @@ mod tests {
         let before = ledger.tip;
         // Corrupt only the parent's snapshot to prove the full state transition
         // rejects an otherwise correctly hashed, mined, signed block atomically.
-        ledger.entries.get_mut(&before).unwrap().state.parcels
-            [usize::from(two.transactions[0].parcel)]
-        .owner = None;
+        ledger.entries.get_mut(&before).unwrap().state.parcels[usize::from(two.transactions[0].parcel)].owner = None;
         let state = serde_json::to_value(&ledger.head().state).unwrap();
         assert!(ledger.accept(two).is_err());
         assert_eq!(ledger.tip, before);

@@ -34,25 +34,8 @@ use std::{
 };
 use transfer::{TransferAction, TransferMenu};
 
-const PAGES: &[&str] = &[
-    "1 Canvas",
-    "2 Controls",
-    "3 Tests",
-    "4 Debug",
-    "5 Logs",
-    "6 Help",
-    "7 Owned",
-    "8 Settings",
-    "9 Network",
-];
-const DEBUG: &[&str] = &[
-    "Status",
-    "Peers",
-    "Chain",
-    "Mempool",
-    "Sync",
-    "Config / files",
-];
+const PAGES: &[&str] = &["1 Canvas", "2 Controls", "3 Tests", "4 Debug", "5 Logs", "6 Help", "7 Owned", "8 Settings", "9 Network"];
+const DEBUG: &[&str] = &["Status", "Peers", "Chain", "Mempool", "Sync", "Config / files"];
 const CONTROLS: &[&str] = &[
     "Toggle networking (online / offline)",
     "Toggle mining (start / stop worker)",
@@ -75,10 +58,7 @@ pub struct View<'a> {
 }
 impl View<'_> {
     fn display_color(&self, id: usize) -> crate::protocol::Color {
-        self.pending
-            .get(&id)
-            .filter(|_| self.owned.contains_key(&id))
-            .map_or(self.state.parcels[id].color, |paint| paint.color)
+        self.pending.get(&id).filter(|_| self.owned.contains_key(&id)).map_or(self.state.parcels[id].color, |paint| paint.color)
     }
 }
 pub struct Input<'a> {
@@ -118,9 +98,7 @@ pub struct App {
 impl App {
     pub fn new() -> Result<Self> {
         if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
-            return Err(crate::Error::Invalid(
-                "dashboard needs an interactive terminal; use `node` for pipes and scripts",
-            ));
+            return Err(crate::Error::Invalid("dashboard needs an interactive terminal; use `node` for pipes and scripts"));
         }
         let terminal = match ratatui::try_init() {
             Ok(terminal) => terminal,
@@ -154,17 +132,7 @@ impl App {
         })
     }
     pub fn input(&mut self, context: Input<'_>) -> Result<Option<String>> {
-        let Input {
-            mining,
-            online,
-            data_dir,
-            owned,
-            threads,
-            port,
-            difficulty,
-            saved_peers,
-            peer_status,
-        } = context;
+        let Input { mining, online, data_dir, owned, threads, port, difficulty, saved_peers, peer_status } = context;
         self.owned_selection = owned_selection(owned, self.owned_selection);
         // Bound event work per frame so input floods cannot starve networking.
         for _ in 0..32 {
@@ -224,10 +192,7 @@ impl App {
                     KeyCode::Backspace => {
                         command.pop();
                     }
-                    KeyCode::Char(c)
-                        if !key.modifiers.contains(KeyModifiers::CONTROL)
-                            && command.len() < 1024 =>
-                    {
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) && command.len() < 1024 => {
                         command.push(c);
                     }
                     _ => {}
@@ -243,16 +208,10 @@ impl App {
                 KeyCode::Char('q') => return Ok(Some("quit".into())),
                 KeyCode::Char(':') => self.command = Some(String::new()),
                 KeyCode::Char('m') => {
-                    return Ok(Some(format!(
-                        "mining {}",
-                        if mining { "off" } else { "on" }
-                    )));
+                    return Ok(Some(format!("mining {}", if mining { "off" } else { "on" })));
                 }
                 KeyCode::Char('o') => {
-                    return Ok(Some(format!(
-                        "network {}",
-                        if online { "off" } else { "on" }
-                    )));
+                    return Ok(Some(format!("network {}", if online { "off" } else { "on" })));
                 }
                 KeyCode::Char('e') => {
                     self.message = format!("Export requested → {}", data_dir.display());
@@ -302,42 +261,24 @@ impl App {
                 KeyCode::Down if self.page == 6 => self.move_owned(owned, 1),
                 KeyCode::PageUp if self.page == 6 => self.move_owned(owned, -10),
                 KeyCode::PageDown if self.page == 6 => self.move_owned(owned, 10),
-                KeyCode::Home if self.page == 6 => {
-                    self.owned_selection = owned.keys().next().copied()
-                }
-                KeyCode::End if self.page == 6 => {
-                    self.owned_selection = owned.keys().next_back().copied()
-                }
+                KeyCode::Home if self.page == 6 => self.owned_selection = owned.keys().next().copied(),
+                KeyCode::End if self.page == 6 => self.owned_selection = owned.keys().next_back().copied(),
                 KeyCode::Enter if self.page == 6 => self.edit_color(owned),
-                KeyCode::Up if self.page == 7 => {
-                    self.settings_selection = self.settings_selection.saturating_sub(1)
-                }
-                KeyCode::Down if self.page == 7 => {
-                    self.settings_selection = (self.settings_selection + 1).min(3)
-                }
-                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+' | '=')
-                    if self.page == 7 =>
-                {
-                    let delta = if matches!(key.code, KeyCode::Left | KeyCode::Char('-')) {
-                        -1
-                    } else {
-                        1
-                    };
+                KeyCode::Up if self.page == 7 => self.settings_selection = self.settings_selection.saturating_sub(1),
+                KeyCode::Down if self.page == 7 => self.settings_selection = (self.settings_selection + 1).min(3),
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+' | '=') if self.page == 7 => {
+                    let delta = if matches!(key.code, KeyCode::Left | KeyCode::Char('-')) { -1 } else { 1 };
                     match self.settings_selection {
                         3 => {
-                            self.difficulty_draft =
-                                self.difficulty_draft.saturating_add_signed(delta).clamp(
-                                    crate::settings::MIN_MINING_DIFFICULTY,
-                                    crate::settings::MAX_MINING_DIFFICULTY,
-                                )
+                            self.difficulty_draft = self
+                                .difficulty_draft
+                                .saturating_add_signed(delta)
+                                .clamp(crate::settings::MIN_MINING_DIFFICULTY, crate::settings::MAX_MINING_DIFFICULTY)
                         }
                         2 => self.port_draft = self.port_draft.saturating_add_signed(delta).max(1),
                         _ => {
                             self.settings_selection = 1;
-                            self.thread_draft = self
-                                .thread_draft
-                                .saturating_add_signed(delta.into())
-                                .clamp(1, MAX_MINING_THREADS);
+                            self.thread_draft = self.thread_draft.saturating_add_signed(delta.into()).clamp(1, MAX_MINING_THREADS);
                         }
                     }
                 }
@@ -359,33 +300,19 @@ impl App {
                     }
                     return Ok(Some(format!(
                         "threads {}",
-                        if self.settings_selection == 0 {
-                            "all".into()
-                        } else {
-                            self.thread_draft.to_string()
-                        }
+                        if self.settings_selection == 0 { "all".into() } else { self.thread_draft.to_string() }
                     )));
                 }
                 KeyCode::PageUp => self.scroll = self.scroll.saturating_add(10),
                 KeyCode::PageDown => self.scroll = self.scroll.saturating_sub(10),
                 KeyCode::Home => self.scroll = u16::MAX,
                 KeyCode::End => self.scroll = 0,
-                KeyCode::Left if self.page == 0 => {
-                    self.selection = self.selection.saturating_sub(1)
-                }
-                KeyCode::Right if self.page == 0 => {
-                    self.selection = (self.selection + 1).min(PARCELS - 1)
-                }
-                KeyCode::Up if self.page == 0 => {
-                    self.selection = self.selection.saturating_sub(WIDTH)
-                }
-                KeyCode::Down if self.page == 0 => {
-                    self.selection = (self.selection + WIDTH).min(PARCELS - 1)
-                }
+                KeyCode::Left if self.page == 0 => self.selection = self.selection.saturating_sub(1),
+                KeyCode::Right if self.page == 0 => self.selection = (self.selection + 1).min(PARCELS - 1),
+                KeyCode::Up if self.page == 0 => self.selection = self.selection.saturating_sub(WIDTH),
+                KeyCode::Down if self.page == 0 => self.selection = (self.selection + WIDTH).min(PARCELS - 1),
                 KeyCode::Up if self.page == 1 => self.control = self.control.saturating_sub(1),
-                KeyCode::Down if self.page == 1 => {
-                    self.control = (self.control + 1).min(CONTROLS.len() - 1)
-                }
+                KeyCode::Down if self.page == 1 => self.control = (self.control + 1).min(CONTROLS.len() - 1),
                 KeyCode::Up if self.page == 2 => self.task = self.task.saturating_sub(1),
                 KeyCode::Down if self.page == 2 => self.task = (self.task + 1).min(TASKS.len() - 1),
                 KeyCode::Left if self.page == 3 => {
@@ -398,16 +325,10 @@ impl App {
                 }
                 KeyCode::Enter if self.page == 1 => match self.control {
                     0 => {
-                        return Ok(Some(format!(
-                            "network {}",
-                            if online { "off" } else { "on" }
-                        )));
+                        return Ok(Some(format!("network {}", if online { "off" } else { "on" })));
                     }
                     1 => {
-                        return Ok(Some(format!(
-                            "mining {}",
-                            if mining { "off" } else { "on" }
-                        )));
+                        return Ok(Some(format!("mining {}", if mining { "off" } else { "on" })));
                     }
                     2 => return Ok(Some("export".into())),
                     3 => self.edit_color(owned),
@@ -446,11 +367,7 @@ impl App {
         self.reset_scroll();
     }
     fn active_parcel(&self) -> usize {
-        if self.page == 6 {
-            self.owned_selection.unwrap_or(self.selection)
-        } else {
-            self.selection
-        }
+        if self.page == 6 { self.owned_selection.unwrap_or(self.selection) } else { self.selection }
     }
     pub fn command_result(&mut self, command: &str, result: &Result<bool>, mining: bool) {
         if command.split_whitespace().next() == Some("transfer") {
@@ -549,26 +466,12 @@ impl App {
         }
     }
     fn move_owned(&mut self, owned: &BTreeMap<usize, Acquisition>, amount: isize) {
-        let index = owned
-            .keys()
-            .position(|id| Some(*id) == self.owned_selection)
-            .unwrap_or(0);
-        self.owned_selection = owned
-            .keys()
-            .nth(
-                index
-                    .saturating_add_signed(amount)
-                    .min(owned.len().saturating_sub(1)),
-            )
-            .copied();
+        let index = owned.keys().position(|id| Some(*id) == self.owned_selection).unwrap_or(0);
+        self.owned_selection = owned.keys().nth(index.saturating_add_signed(amount).min(owned.len().saturating_sub(1))).copied();
     }
 
     fn reset_scroll(&mut self) {
-        self.scroll = if matches!(self.page, 3 | 5) {
-            u16::MAX
-        } else {
-            0
-        };
+        self.scroll = if matches!(self.page, 3 | 5) { u16::MAX } else { 0 };
     }
     pub fn needs_debug(&self) -> bool {
         self.page == 3
@@ -600,26 +503,67 @@ impl App {
         terminal.draw(|frame| {
             let area = frame.area();
             if area.width < 36 || area.height < 10 {
-                frame.render_widget(Paragraph::new("Pixel Chain\nResize terminal to at least 36×10.\nq quits; o network; m mining.").wrap(Wrap { trim: false }), area);
+                frame.render_widget(
+                    Paragraph::new("Pixel Chain\nResize terminal to at least 36×10.\nq quits; o network; m mining.")
+                        .wrap(Wrap { trim: false }),
+                    area,
+                );
                 return;
             }
-            let regions = Layout::vertical([Constraint::Length(2), Constraint::Length(1), Constraint::Min(1), Constraint::Length(if *page == 0 && area.height <= 26 { 3 } else { 4 })]).split(area);
+            let regions = Layout::vertical([
+                Constraint::Length(2),
+                Constraint::Length(1),
+                Constraint::Min(1),
+                Constraint::Length(if *page == 0 && area.height <= 26 { 3 } else { 4 }),
+            ])
+            .split(area);
             let online = view.status["online"].as_bool().unwrap_or(false);
             let mining = view.status["mining"].as_bool().unwrap_or(false);
             let title = Line::from(vec![
                 Span::styled(" PIXEL CHAIN ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
-                Span::styled(if online { " ONLINE " } else { " OFFLINE " }, Style::default().fg(if online { Color::Green } else { Color::Yellow })),
-                Span::styled(if mining { " MINING " } else { " MINING STOPPED " }, Style::default().fg(if mining { Color::Green } else { Color::DarkGray })),
+                Span::styled(
+                    if online { " ONLINE " } else { " OFFLINE " },
+                    Style::default().fg(if online { Color::Green } else { Color::Yellow }),
+                ),
+                Span::styled(
+                    if mining { " MINING " } else { " MINING STOPPED " },
+                    Style::default().fg(if mining { Color::Green } else { Color::DarkGray }),
+                ),
             ]);
-            frame.render_widget(Paragraph::new(vec![title, Line::from(format!(" Height {}  •  Sessions {}  •  Pending {}  •  Owned {}  •  Threads {}", view.status["height"], view.status["connections"], view.status["mempool"], view.status["owned"].as_array().map_or(0, Vec::len), view.status["mining_threads"]))]), regions[0]);
-            frame.render_widget(Tabs::new(PAGES.iter().copied()).padding("", "").select(*page).highlight_style(Style::default().fg(Color::Black).bg(ACCENT)), regions[1]);
+            frame.render_widget(
+                Paragraph::new(vec![
+                    title,
+                    Line::from(format!(
+                        " Height {}  •  Sessions {}  •  Pending {}  •  Owned {}  •  Threads {}",
+                        view.status["height"],
+                        view.status["connections"],
+                        view.status["mempool"],
+                        view.status["owned"].as_array().map_or(0, Vec::len),
+                        view.status["mining_threads"]
+                    )),
+                ]),
+                regions[0],
+            );
+            frame.render_widget(
+                Tabs::new(PAGES.iter().copied())
+                    .padding("", "")
+                    .select(*page)
+                    .highlight_style(Style::default().fg(Color::Black).bg(ACCENT)),
+                regions[1],
+            );
             match *page {
                 0 => canvas(frame, regions[2], &view, *selection, *ownership, *show_owned),
                 1 => controls(frame, regions[2], *control, online, mining),
                 2 => diagnostics(frame, regions[2], runner, *task, scroll, online),
                 3 => {
                     let rows = Layout::vertical([Constraint::Length(2), Constraint::Min(1)]).split(regions[2]);
-                    frame.render_widget(Tabs::new(DEBUG.iter().copied()).select(*debug_page).highlight_style(Style::default().fg(ACCENT)).block(Block::default().title("←/→ debug submenu")), rows[0]);
+                    frame.render_widget(
+                        Tabs::new(DEBUG.iter().copied())
+                            .select(*debug_page)
+                            .highlight_style(Style::default().fg(ACCENT))
+                            .block(Block::default().title("←/→ debug submenu")),
+                        rows[0],
+                    );
                     text_panel(frame, rows[1], "Live debug state • PgUp/PgDn scroll", &view.debug, scroll);
                 }
                 4 => {
@@ -635,23 +579,29 @@ impl App {
                 Some(line) => (format!(":{line}█"), "Command • Enter submits • Esc cancels"),
                 None => {
                     let progress = last_paint.map_or_else(|| message.clone(), |paint| paint_feedback(&view, paint));
-                    (view.logs.back().map_or_else(|| progress.clone(), |line| format!("{progress}\n{line}")), "q quit • : command • m mining • o network • ? help")
-                },
+                    (
+                        view.logs.back().map_or_else(|| progress.clone(), |line| format!("{progress}\n{line}")),
+                        "q quit • : command • m mining • o network • ? help",
+                    )
+                }
             };
-            frame.render_widget(Paragraph::new(text).block(panel(title)).style(Style::default().fg(if command.is_some() { ACCENT } else { Color::Gray })), regions[3]);
-            if let Some(editor) = editor { editor.draw(frame, &view); }
+            frame.render_widget(
+                Paragraph::new(text).block(panel(title)).style(Style::default().fg(if command.is_some() { ACCENT } else { Color::Gray })),
+                regions[3],
+            );
+            if let Some(editor) = editor {
+                editor.draw(frame, &view);
+            }
             network.draw_editor(frame);
-            if let Some(transfer) = transfer { transfer.draw(frame, view.status["network_peers"].as_array().map_or(&[], Vec::as_slice)); }
+            if let Some(transfer) = transfer {
+                transfer.draw(frame, view.status["network_peers"].as_array().map_or(&[], Vec::as_slice));
+            }
         })?;
         Ok(())
     }
 }
 fn paint_feedback(view: &View<'_>, (id, color): (usize, crate::protocol::Color)) -> String {
-    if let Some(paint) = view
-        .pending
-        .get(&id)
-        .filter(|_| view.owned.contains_key(&id))
-    {
+    if let Some(paint) = view.pending.get(&id).filter(|_| view.owned.contains_key(&id)) {
         format!(
             "Parcel {id}: PENDING #{} preview • {}",
             paint.color,
@@ -666,10 +616,7 @@ fn paint_feedback(view: &View<'_>, (id, color): (usize, crate::protocol::Color))
     } else if view.state.parcels[id].color == color {
         format!("Parcel {id}: color #{color} CONFIRMED")
     } else {
-        format!(
-            "Parcel {id}: edit no longer pending • confirmed #{} • re-submit if needed",
-            view.state.parcels[id].color
-        )
+        format!("Parcel {id}: edit no longer pending • confirmed #{} • re-submit if needed", view.state.parcels[id].color)
     }
 }
 impl Drop for App {
@@ -680,104 +627,52 @@ impl Drop for App {
 fn centered(area: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(area.width);
     let height = height.min(area.height);
-    Rect::new(
-        area.x + (area.width - width) / 2,
-        area.y + (area.height - height) / 2,
-        width,
-        height,
-    )
+    Rect::new(area.x + (area.width - width) / 2, area.y + (area.height - height) / 2, width, height)
 }
 fn panel(title: &str) -> Block<'_> {
-    Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(Style::default().fg(Color::DarkGray))
+    Block::default().borders(Borders::ALL).title(title).border_style(Style::default().fg(Color::DarkGray))
 }
 fn menu(frame: &mut Frame, area: Rect, title: &str, items: &[&str], selected: usize) {
     let list = List::new(items.iter().map(|s| ListItem::new(*s)))
         .block(panel(title))
         .highlight_style(Style::default().bg(Color::DarkGray).fg(ACCENT))
         .highlight_symbol("› ");
-    frame.render_stateful_widget(
-        list,
-        area,
-        &mut ListState::default().with_selected(Some(selected)),
-    );
+    frame.render_stateful_widget(list, area, &mut ListState::default().with_selected(Some(selected)));
 }
 fn text_panel(frame: &mut Frame, area: Rect, title: &str, text: &str, scroll: &mut u16) {
     let visible = area.height.saturating_sub(2) as usize;
     let lines = text.lines().count();
     let bottom = lines.saturating_sub(visible);
     *scroll = (*scroll).min(bottom.min(u16::MAX as usize) as u16);
-    let offset = bottom
-        .saturating_sub(*scroll as usize)
-        .min(u16::MAX as usize) as u16;
-    frame.render_widget(
-        Paragraph::new(text).block(panel(title)).scroll((offset, 0)),
-        area,
-    );
+    let offset = bottom.saturating_sub(*scroll as usize).min(u16::MAX as usize) as u16;
+    frame.render_widget(Paragraph::new(text).block(panel(title)).scroll((offset, 0)), area);
 }
 fn controls(frame: &mut Frame, area: Rect, selected: usize, online: bool, mining: bool) {
     let rows = Layout::vertical([Constraint::Length(10), Constraint::Min(1)]).split(area);
-    menu(
-        frame,
-        rows[0],
-        "Controls • ↑/↓ select • Enter apply",
-        CONTROLS,
-        selected,
-    );
+    menu(frame, rows[0], "Controls • ↑/↓ select • Enter apply", CONTROLS, selected);
     frame.render_widget(Paragraph::new(format!(
         "Network: {}\nMining: {}\n\nOffline closes the TCP listener, sessions, queued sends, and reconnect loops. Local mining, painting, and inspection stay available. Reconnecting resumes synchronization and gossip.\n\nMining OFF cancels and joins the worker. Networking continues independently.\n\nOffline affects this node. Test jobs may start isolated loopback nodes; cancel them with x in Tests.\n\nThe chain is in memory; quit loses local chain state. Keep a peer alive for recovery.",
         if online { "ONLINE" } else { "OFFLINE" }, if mining { "ON" } else { "STOPPED" }
     )).block(panel("Control behavior")).wrap(Wrap { trim: false }), rows[1]);
 }
-fn diagnostics(
-    frame: &mut Frame,
-    area: Rect,
-    runner: &Runner,
-    task: usize,
-    scroll: &mut u16,
-    online: bool,
-) {
+fn diagnostics(frame: &mut Frame, area: Rect, runner: &Runner, task: usize, scroll: &mut u16, online: bool) {
     let regions = if area.width >= 100 {
         Layout::horizontal([Constraint::Percentage(43), Constraint::Percentage(57)]).split(area)
     } else {
         Layout::vertical([Constraint::Percentage(45), Constraint::Percentage(55)]).split(area)
     };
-    menu(
-        frame,
-        regions[0],
-        "Tests / hash-rate check • ↑/↓ • Enter run • x stop",
-        TASKS,
-        task,
-    );
+    menu(frame, regions[0], "Tests / hash-rate check • ↑/↓ • Enter run • x stop", TASKS, task);
     let rows = Layout::vertical([Constraint::Length(5), Constraint::Min(1)]).split(regions[1]);
     let summary = format!(
         "{}\nWorkspace: {}\nLog: {}\n{}",
         runner.status,
         runner.root.display(),
-        runner
-            .log_path
-            .as_ref()
-            .map_or_else(|| "(none yet)".into(), |p| p.display().to_string()),
-        if online {
-            "Node stays responsive while diagnostics run."
-        } else {
-            "Node OFFLINE. Tests can create isolated loopback peers."
-        }
+        runner.log_path.as_ref().map_or_else(|| "(none yet)".into(), |p| p.display().to_string()),
+        if online { "Node stays responsive while diagnostics run." } else { "Node OFFLINE. Tests can create isolated loopback peers." }
     );
-    frame.render_widget(
-        Paragraph::new(summary).block(Block::default().title("Job status").borders(Borders::TOP)),
-        rows[0],
-    );
+    frame.render_widget(Paragraph::new(summary).block(Block::default().title("Job status").borders(Borders::TOP)), rows[0]);
     let text = runner.output.iter().cloned().collect::<Vec<_>>().join("\n");
-    text_panel(
-        frame,
-        rows[1],
-        "Diagnostic output • PgUp/PgDn • End follows",
-        &text,
-        scroll,
-    );
+    text_panel(frame, rows[1], "Diagnostic output • PgUp/PgDn • End follows", &text, scroll);
 }
 const HELP: &str = "Tab / Shift-Tab or 1–9   Switch pages\n↑/↓/←/→ on Canvas         Select parcel on the full map\nv                        Toggle RGB / ownership colors\np / t                    Color picker / transfer selected parcel\nb / 7                    Open owned parcels and acquisition history\nh                        Show/hide your owned parcel markers\ns / 8                    Settings: mining threads, difficulty and TCP port\n9                        Network: saved IP addresses, aliases, connection status\nNetwork page             a adds; Enter/e edits; d removes; o online/offline\nPeer editor              Tab to Cross compatibility; Space opens; arrows select; Enter saves\nTransfer menu            ↑/↓ select a connected node; Enter queues; m enters a public key
 Color picker             Type a name or hex; ↑/↓ select; Tab completes; Enter sends; Esc cancels\nm                        Start or stop mining independently\no                        Go offline or reconnect independently\ne                        Export status.json, state.json and canvas.ppm\n:                        Open command input; Esc cancels\nq / Ctrl-C               Stop jobs and mining, close sockets, restore terminal\n\nControls submenu: ↑/↓ then Enter to apply.\nTests submenu: ↑/↓ then Enter; x cancels the active diagnostic.\nDebug submenu: ←/→ selects Status, Peers, Chain, Mempool, Sync, Config.\nPgUp / PgDn scroll output; Home oldest; End follows latest.\n\nCommands:\nstatus | identity | owned | mining on|off | threads COUNT|all | difficulty BITS | port PORT | network on|off\npeer add IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer edit OLD_IP[:PORT] IP[:PORT] [--compat native|grupa1-luka] [ALIAS] | peer remove IP[:PORT]\npaint PARCEL COLOR_NAME|RRGGBB | transfer PARCEL PUBLIC_KEY | export [PATH.ppm] | quit\nGrupa 1 - Luka uses a separate chain; native canvas and mining stay on the native chain.\ngrupa1 status | grupa1 mining on|off | grupa1 paint PARCEL COLOR | grupa1 transfer PARCEL KEY\nGrupa 1 HTTP routes share this node's configured port; no handshake or identity exchange.\n\nDiagnostic jobs keep this UI responsive and save full output under data-dir/diagnostics.\nCargo, Python 3 and OpenSSL are needed for the full validation suite.\nSet PIXEL_WORKSPACE if the executable has moved away from its source tree.\nTests can start isolated local nodes even while this node is offline.\nThe hash-rate check measures header hashing speed.\n\nIdentity persists, but chain storage is in memory. Restart with surviving peers for recovery.";
@@ -800,43 +695,19 @@ mod tests {
             logs: &VecDeque::new(),
             debug: String::new(),
         };
-        for (width, height) in [
-            (120, 18),
-            (120, 24),
-            (80, 24),
-            (68, 12),
-            (67, 22),
-            (36, 10),
-            (12, 6),
-            (1, 1),
-        ] {
+        for (width, height) in [(120, 18), (120, 24), (80, 24), (68, 12), (67, 22), (36, 10), (12, 6), (1, 1)] {
             let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
             let mut first_image = None;
             for selected in [0, PARCELS - 1] {
-                terminal
-                    .draw(|frame| canvas(frame, frame.area(), &view, selected, false, true))
-                    .unwrap();
+                terminal.draw(|frame| canvas(frame, frame.area(), &view, selected, false, true)).unwrap();
                 let cells = terminal.backend().buffer();
                 assert!(
-                    width == 1
-                        || cells
-                            .content()
-                            .iter()
-                            .any(|cell| cell.fg == Color::Cyan
-                                || cell.underline_color == Color::Cyan),
+                    width == 1 || cells.content().iter().any(|cell| cell.fg == Color::Cyan || cell.underline_color == Color::Cyan),
                     "selection remains visible even at the bottom-right corner"
                 );
-                let image = cells
-                    .content()
-                    .iter()
-                    .filter(|cell| cell.symbol() == "▀")
-                    .map(|cell| (cell.fg, cell.bg))
-                    .collect::<Vec<_>>();
+                let image = cells.content().iter().filter(|cell| cell.symbol() == "▀").map(|cell| (cell.fg, cell.bg)).collect::<Vec<_>>();
                 if let Some(first) = &first_image {
-                    assert_eq!(
-                        &image, first,
-                        "moving selection must preserve every image color and its position"
-                    );
+                    assert_eq!(&image, first, "moving selection must preserve every image color and its position");
                 }
                 first_image = Some(image);
                 if (width, height) == (120, 18) {
@@ -863,16 +734,8 @@ mod tests {
             debug: String::new(),
         };
         let mut terminal = Terminal::new(TestBackend::new(48, 9)).unwrap();
-        terminal
-            .draw(|frame| canvas(frame, frame.area(), &view, PARCELS - 1, false, true))
-            .unwrap();
-        let text: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
+        terminal.draw(|frame| canvas(frame, frame.area(), &view, PARCELS - 1, false, true)).unwrap();
+        let text: String = terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect();
         assert!(text.contains("averaged overview"));
         assert!(text.contains("#1023 (31, 31)"));
         assert!(text.contains("#ff0080"));
@@ -885,44 +748,15 @@ mod tests {
         let mut state = State::default();
         let owner = crate::protocol::Bytes([0xab; 32]);
         state.parcels[0].owner = Some(owner);
-        let owned = BTreeMap::from([(
-            0,
-            Acquisition {
-                height: 1,
-                timestamp: 0,
-                block: Default::default(),
-                source: Source::Mining,
-            },
-        )]);
-        let pending = BTreeMap::from([(
-            0,
-            crate::mempool::PendingPaint {
-                color: colors::parse("red").unwrap(),
-                transaction: Default::default(),
-            },
-        )]);
-        let view = View {
-            status: Value::Null,
-            state: &state,
-            owned: &owned,
-            pending: &pending,
-            logs: &VecDeque::new(),
-            debug: String::new(),
-        };
+        let owned = BTreeMap::from([(0, Acquisition { height: 1, timestamp: 0, block: Default::default(), source: Source::Mining })]);
+        let pending =
+            BTreeMap::from([(0, crate::mempool::PendingPaint { color: colors::parse("red").unwrap(), transaction: Default::default() })]);
+        let view =
+            View { status: Value::Null, state: &state, owned: &owned, pending: &pending, logs: &VecDeque::new(), debug: String::new() };
         let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
-        terminal
-            .draw(|frame| canvas(frame, frame.area(), &view, 0, false, true))
-            .unwrap();
+        terminal.draw(|frame| canvas(frame, frame.area(), &view, 0, false, true)).unwrap();
         let cells = terminal.backend().buffer();
-        let text = (1..15)
-            .map(|y| {
-                (91..119)
-                    .map(|x| cells[(x, y)].symbol())
-                    .collect::<String>()
-                    .trim()
-                    .to_owned()
-            })
-            .collect::<String>();
+        let text = (1..15).map(|y| (91..119).map(|x| cells[(x, y)].symbol()).collect::<String>().trim().to_owned()).collect::<String>();
         assert!(text.contains(&owner.to_string()));
         assert!(text.contains("#ff0000 PENDING"));
         assert!(text.contains("t transfer"));
@@ -931,38 +765,21 @@ mod tests {
     #[test]
     fn home_then_page_down_moves_away_from_the_beginning() {
         let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
-        let text = (0..100)
-            .map(|n| n.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let text = (0..100).map(|n| n.to_string()).collect::<Vec<_>>().join("\n");
         let mut scroll = u16::MAX;
-        terminal
-            .draw(|frame| text_panel(frame, frame.area(), "test", &text, &mut scroll))
-            .unwrap();
+        terminal.draw(|frame| text_panel(frame, frame.area(), "test", &text, &mut scroll)).unwrap();
         assert_eq!(scroll, 92);
         assert_eq!(terminal.backend().buffer()[(1, 1)].symbol(), "0");
         scroll = scroll.saturating_sub(10);
-        terminal
-            .draw(|frame| text_panel(frame, frame.area(), "test", &text, &mut scroll))
-            .unwrap();
+        terminal.draw(|frame| text_panel(frame, frame.area(), "test", &text, &mut scroll)).unwrap();
         assert_eq!(terminal.backend().buffer()[(1, 1)].symbol(), "1");
         assert_eq!(terminal.backend().buffer()[(2, 1)].symbol(), "0");
     }
 
     #[test]
     fn map_marks_owned_parcels_without_covering_their_colors() {
-        let receipt = Acquisition {
-            height: 1,
-            timestamp: 0,
-            block: crate::protocol::Bytes::default(),
-            source: Source::Mining,
-        };
-        let owned = BTreeMap::from([
-            (0, receipt.clone()),
-            (2 * WIDTH, receipt.clone()),
-            (2, receipt.clone()),
-            (WIDTH + 3, receipt),
-        ]);
+        let receipt = Acquisition { height: 1, timestamp: 0, block: crate::protocol::Bytes::default(), source: Source::Mining };
+        let owned = BTreeMap::from([(0, receipt.clone()), (2 * WIDTH, receipt.clone()), (2, receipt.clone()), (WIDTH + 3, receipt)]);
         let state = State::default();
         let view = View {
             status: Value::Null,
@@ -973,9 +790,7 @@ mod tests {
             debug: String::new(),
         };
         let mut terminal = Terminal::new(TestBackend::new(120, 18)).unwrap();
-        terminal
-            .draw(|frame| canvas(frame, frame.area(), &view, 0, false, true))
-            .unwrap();
+        terminal.draw(|frame| canvas(frame, frame.area(), &view, 0, false, true)).unwrap();
         let cells = terminal.backend().buffer();
         // A native-size image is centered in the map panel (90×18).
         // The two rows in each half-block keep their exact confirmed colors.
@@ -987,67 +802,30 @@ mod tests {
         assert_eq!(cells[(29, 1)].bg, Color::Rgb(0, 0, 0));
         assert_eq!(cells[(30, 1)].symbol(), "▀");
         assert!(!cells[(30, 1)].modifier.contains(Modifier::UNDERLINED));
-        terminal
-            .draw(|frame| canvas(frame, frame.area(), &view, 0, false, false))
-            .unwrap();
-        assert!(
-            !terminal.backend().buffer()[(31, 1)]
-                .modifier
-                .contains(Modifier::UNDERLINED)
-        );
-        assert_eq!(
-            terminal.backend().buffer()[(29, 1)].underline_color,
-            Color::Cyan
-        );
+        terminal.draw(|frame| canvas(frame, frame.area(), &view, 0, false, false)).unwrap();
+        assert!(!terminal.backend().buffer()[(31, 1)].modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(terminal.backend().buffer()[(29, 1)].underline_color, Color::Cyan);
     }
 
     #[test]
     fn pending_color_is_visible_on_full_map_and_confirmation_updates_feedback() {
-        let receipt = Acquisition {
-            height: 1,
-            timestamp: 0,
-            block: Default::default(),
-            source: Source::Mining,
-        };
+        let receipt = Acquisition { height: 1, timestamp: 0, block: Default::default(), source: Source::Mining };
         let owned = BTreeMap::from([(2, receipt)]);
         let red = crate::colors::parse("red").unwrap();
         let blue = crate::colors::parse("blue").unwrap();
-        let pending = BTreeMap::from([(
-            2,
-            crate::mempool::PendingPaint {
-                color: red,
-                transaction: Default::default(),
-            },
-        )]);
+        let pending = BTreeMap::from([(2, crate::mempool::PendingPaint { color: red, transaction: Default::default() })]);
         let mut state = State::default();
         state.parcels[2].color = blue;
-        let view = View {
-            status: Value::Null,
-            state: &state,
-            owned: &owned,
-            pending: &pending,
-            logs: &VecDeque::new(),
-            debug: String::new(),
-        };
+        let view =
+            View { status: Value::Null, state: &state, owned: &owned, pending: &pending, logs: &VecDeque::new(), debug: String::new() };
         let mut terminal = Terminal::new(TestBackend::new(120, 18)).unwrap();
-        terminal
-            .draw(|frame| canvas(frame, frame.area(), &view, 2, false, true))
-            .unwrap();
+        terminal.draw(|frame| canvas(frame, frame.area(), &view, 2, false, true)).unwrap();
         assert_eq!(terminal.backend().buffer()[(31, 1)].fg, colors::rgb(red));
-        assert_eq!(
-            terminal.backend().buffer()[(31, 1)].underline_color,
-            Color::Cyan
-        );
-        assert_eq!(
-            view.state.parcels[2].color, blue,
-            "preview must not change consensus state"
-        );
+        assert_eq!(terminal.backend().buffer()[(31, 1)].underline_color, Color::Cyan);
+        assert_eq!(view.state.parcels[2].color, blue, "preview must not change consensus state");
         assert!(paint_feedback(&view, (2, red)).contains("PENDING"));
         assert!(paint_feedback(&view, (2, red)).contains("mining stopped"));
-        let no_longer_owned = View {
-            owned: &BTreeMap::new(),
-            ..view
-        };
+        let no_longer_owned = View { owned: &BTreeMap::new(), ..view };
         assert_eq!(no_longer_owned.display_color(2), blue);
         state.parcels[2].color = red;
         let confirmed = View {

@@ -12,21 +12,9 @@ use std::{
 /// Single-worker entry point retained for reproducible benchmarks.
 pub fn mine(block: Block, cancel: &AtomicBool) -> Option<Block> {
     let start = block.nonce;
-    mine_lane(
-        block,
-        cancel,
-        start,
-        1,
-        crate::protocol::params::DIFFICULTY as u16,
-    )
+    mine_lane(block, cancel, start, 1, crate::protocol::params::DIFFICULTY as u16)
 }
-fn mine_lane(
-    mut block: Block,
-    cancel: &AtomicBool,
-    start: u64,
-    stride: u64,
-    difficulty: u16,
-) -> Option<Block> {
+fn mine_lane(mut block: Block, cancel: &AtomicBool, start: u64, stride: u64, difficulty: u16) -> Option<Block> {
     let mut bytes = block.canonical_bytes();
     bytes.truncate(bytes.len() - 8);
     let prefix = Sha256::new().chain_update(bytes);
@@ -37,13 +25,7 @@ fn mine_lane(
         if iterations & 0x3fff == 0 && cancel.load(Ordering::Relaxed) {
             return None;
         }
-        let hash = Bytes(
-            prefix
-                .clone()
-                .chain_update(block.nonce.to_be_bytes())
-                .finalize()
-                .into(),
-        );
+        let hash = Bytes(prefix.clone().chain_update(block.nonce.to_be_bytes()).finalize().into());
         if meets_difficulty(hash, difficulty) {
             return Some(block);
         }
@@ -55,70 +37,41 @@ fn mine_lane(
 fn meets_difficulty(hash: Bytes<32>, bits: u16) -> bool {
     let whole = usize::from(bits / 8);
     let remainder = bits % 8;
-    hash.0[..whole].iter().all(|byte| *byte == 0)
-        && (remainder == 0 || hash.0[whole] >> (8 - remainder) == 0)
+    hash.0[..whole].iter().all(|byte| *byte == 0) && (remainder == 0 || hash.0[whole] >> (8 - remainder) == 0)
 }
 
 /// Workers search disjoint nonce lanes. The first result stops the whole group.
 /// Dropping a job also stops and joins its workers, including partial startup.
-pub fn start(
-    block: Block,
-    threads: usize,
-    found: impl Fn(Block) + Send + Sync + 'static,
-) -> io::Result<Job> {
-    start_with_difficulty(
-        block,
-        threads,
-        crate::protocol::params::DIFFICULTY as u16,
-        found,
-    )
+pub fn start(block: Block, threads: usize, found: impl Fn(Block) + Send + Sync + 'static) -> io::Result<Job> {
+    start_with_difficulty(block, threads, crate::protocol::params::DIFFICULTY as u16, found)
 }
 
 pub fn start_with_difficulty(
-    block: Block,
-    threads: usize,
-    difficulty: u16,
-    found: impl Fn(Block) + Send + Sync + 'static,
+    block: Block, threads: usize, difficulty: u16, found: impl Fn(Block) + Send + Sync + 'static,
 ) -> io::Result<Job> {
-    if !(crate::settings::MIN_MINING_DIFFICULTY..=crate::settings::MAX_MINING_DIFFICULTY)
-        .contains(&difficulty)
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid mining difficulty",
-        ));
+    if !(crate::settings::MIN_MINING_DIFFICULTY..=crate::settings::MAX_MINING_DIFFICULTY).contains(&difficulty) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid mining difficulty"));
     }
     if threads == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "mining requires at least one thread",
-        ));
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "mining requires at least one thread"));
     }
-    let stride = u64::try_from(threads)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "too many mining threads"))?;
-    let mut job = Job {
-        cancel: Arc::new(AtomicBool::new(false)),
-        handles: Vec::new(),
-    };
+    let stride = u64::try_from(threads).map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "too many mining threads"))?;
+    let mut job = Job { cancel: Arc::new(AtomicBool::new(false)), handles: Vec::new() };
     let found = Arc::new(found);
     for lane in 0..threads {
         let cancel = job.cancel.clone();
         let found = found.clone();
         let block = block.clone();
-        let handle = std::thread::Builder::new()
-            .name(format!("pixel-miner-{lane}"))
-            .spawn(move || {
-                let Some(start) = block.nonce.checked_add(lane as u64) else {
-                    return;
-                };
-                if let Some(block) = mine_lane(block, &cancel, start, stride, difficulty)
-                    && cancel
-                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                        .is_ok()
-                {
-                    found(block);
-                }
-            })?;
+        let handle = std::thread::Builder::new().name(format!("pixel-miner-{lane}")).spawn(move || {
+            let Some(start) = block.nonce.checked_add(lane as u64) else {
+                return;
+            };
+            if let Some(block) = mine_lane(block, &cancel, start, stride, difficulty)
+                && cancel.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_ok()
+            {
+                found(block);
+            }
+        })?;
         job.handles.push(handle);
     }
     Ok(job)
@@ -172,22 +125,15 @@ mod tests {
         for stride in [1, 2, 3, 8, 17] {
             for lane in 0..stride {
                 assert!(
-                    mine_lane(
-                        crate::protocol::params::genesis(),
-                        &cancelled,
-                        lane + 1,
-                        stride,
-                        crate::settings::MIN_MINING_DIFFICULTY
-                    )
-                    .is_none()
+                    mine_lane(crate::protocol::params::genesis(), &cancelled, lane + 1, stride, crate::settings::MIN_MINING_DIFFICULTY)
+                        .is_none()
                 );
             }
         }
     }
     #[test]
     fn multiple_workers_deliver_one_valid_result_and_join() {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
         let mut block: Block = serde_json::from_value(vectors["one"]["block"].clone()).unwrap();
         // The second lane starts exactly at a known, full-difficulty solution.
         block.nonce -= 1;
@@ -197,14 +143,9 @@ mod tests {
         })
         .unwrap();
         assert_eq!(job.worker_count(), 2);
-        let result = receiver
-            .recv_timeout(std::time::Duration::from_secs(5))
-            .unwrap();
+        let result = receiver.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
         assert!(valid_pow(result.hash()));
         job.stop();
-        assert!(
-            receiver.try_recv().is_err(),
-            "only the winner may deliver a result"
-        );
+        assert!(receiver.try_recv().is_err(), "only the winner may deliver a result");
     }
 }

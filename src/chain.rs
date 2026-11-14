@@ -18,13 +18,7 @@ impl Default for Chain {
         let block = genesis();
         let tip = block.hash();
         let mut entries = BTreeMap::new();
-        entries.insert(
-            tip,
-            Entry {
-                block,
-                state: State::default(),
-            },
-        );
+        entries.insert(tip, Entry { block, state: State::default() });
         Self { entries, tip }
     }
 }
@@ -40,14 +34,10 @@ impl Chain {
         if self.entries.contains_key(&hash) {
             return Ok(false);
         }
-        let parent = self
-            .entries
-            .get(&block.previous)
-            .ok_or(Error::UnknownParent(block.previous))?;
+        let parent = self.entries.get(&block.previous).ok_or(Error::UnknownParent(block.previous))?;
         let state = transition(&block, &parent.block, &parent.state, now)?;
         // At fixed difficulty accumulated work is height * 2^23 (u128).
-        let wins = block.height > self.head().block.height
-            || (block.height == self.head().block.height && hash < self.tip);
+        let wins = block.height > self.head().block.height || (block.height == self.head().block.height && hash < self.tip);
         self.entries.insert(hash, Entry { block, state });
         if wins {
             self.tip = hash;
@@ -85,9 +75,6 @@ impl Chain {
             }
         }
         detached.reverse();
-        detached
-            .into_iter()
-            .flat_map(|hash| self.entries[&hash].block.transactions.clone())
-            .collect()
+        detached.into_iter().flat_map(|hash| self.entries[&hash].block.transactions.clone()).collect()
     }
 }

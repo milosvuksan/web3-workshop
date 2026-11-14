@@ -15,17 +15,12 @@ pub struct State {
 }
 impl Default for State {
     fn default() -> Self {
-        Self {
-            parcels: vec![Parcel::default(); PARCELS],
-        }
+        Self { parcels: vec![Parcel::default(); PARCELS] }
     }
 }
 impl State {
     pub fn apply(&mut self, tx: &Transaction) -> Result<()> {
-        let parcel = self
-            .parcels
-            .get_mut(usize::from(tx.parcel))
-            .ok_or(Error::Invalid("parcel out of range"))?;
+        let parcel = self.parcels.get_mut(usize::from(tx.parcel)).ok_or(Error::Invalid("parcel out of range"))?;
         crypto::verify(tx)?;
         if let Action::Transfer { recipient } = tx.action {
             crypto::valid_key(recipient)?;
@@ -36,10 +31,7 @@ impl State {
         if tx.counter != parcel.counter {
             return Err(Error::Invalid("incorrect parcel counter"));
         }
-        let next = parcel
-            .counter
-            .checked_add(1)
-            .ok_or(Error::Invalid("parcel counter exhausted"))?;
+        let next = parcel.counter.checked_add(1).ok_or(Error::Invalid("parcel counter exhausted"))?;
         match tx.action {
             Action::Paint { color } => parcel.color = color,
             Action::Transfer { recipient } => parcel.owner = Some(recipient),

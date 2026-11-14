@@ -34,39 +34,26 @@ async fn read_head(stream: &mut TcpStream) -> Result<Head> {
     let mut length = None;
     let mut is_json = false;
     for line in lines.filter(|line| !line.is_empty()) {
-        let (name, value) = line
-            .split_once(':')
-            .ok_or(Error::Invalid("invalid HTTP header"))?;
+        let (name, value) = line.split_once(':').ok_or(Error::Invalid("invalid HTTP header"))?;
         let value = value.trim();
         if name.eq_ignore_ascii_case("content-length") {
             if length.is_some() || !value.bytes().all(|b| b.is_ascii_digit()) {
                 return Err(Error::Invalid("invalid HTTP Content-Length"));
             }
-            let size: usize = value
-                .parse()
-                .map_err(|_| Error::Invalid("invalid HTTP Content-Length"))?;
+            let size: usize = value.parse().map_err(|_| Error::Invalid("invalid HTTP Content-Length"))?;
             if size > MAX_BODY {
                 return Err(Error::Invalid("HTTP body too large"));
             }
             length = Some(size);
         }
         if name.eq_ignore_ascii_case("transfer-encoding") {
-            return Err(Error::Invalid(
-                "HTTP Transfer-Encoding is unsupported; use Content-Length",
-            ));
+            return Err(Error::Invalid("HTTP Transfer-Encoding is unsupported; use Content-Length"));
         }
         if name.eq_ignore_ascii_case("content-type") {
-            is_json = value
-                .split(';')
-                .next()
-                .is_some_and(|s| s.trim().eq_ignore_ascii_case("application/json"));
+            is_json = value.split(';').next().is_some_and(|s| s.trim().eq_ignore_ascii_case("application/json"));
         }
     }
-    Ok(Head {
-        first,
-        length,
-        json: is_json,
-    })
+    Ok(Head { first, length, json: is_json })
 }
 async fn read_body(stream: &mut TcpStream, length: Option<usize>) -> Result<Vec<u8>> {
     if let Some(length) = length {
@@ -75,10 +62,7 @@ async fn read_body(stream: &mut TcpStream, length: Option<usize>) -> Result<Vec<
         Ok(bytes)
     } else {
         let mut bytes = vec![];
-        stream
-            .take((MAX_BODY + 1) as u64)
-            .read_to_end(&mut bytes)
-            .await?;
+        stream.take((MAX_BODY + 1) as u64).read_to_end(&mut bytes).await?;
         if bytes.len() > MAX_BODY {
             return Err(Error::Invalid("HTTP body too large"));
         }
@@ -93,7 +77,15 @@ async fn write_response(stream: &mut TcpStream, status: u16, body: Value) -> Res
         404 => "Not Found",
         _ => "Bad Request",
     };
-    stream.write_all(format!("HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes()).await?;
+    stream
+        .write_all(
+            format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .await?;
     stream.write_all(&body).await?;
     stream.shutdown().await?;
     Ok(())
@@ -110,10 +102,7 @@ async fn route(stream: &mut TcpStream, state: &Compatibility) -> Result<(u16, Va
     match (*method, *path) {
         ("GET", "/tip") => {
             let ledger = state.ledger.lock().unwrap();
-            Ok((
-                200,
-                json!({"height":ledger.head().block.height, "hash":ledger.tip}),
-            ))
+            Ok((200, json!({"height":ledger.head().block.height, "hash":ledger.tip})))
         }
         ("GET", path) if path.starts_with("/blocks/") => {
             let hash: Hash = path[8..].parse()?;
@@ -125,9 +114,7 @@ async fn route(stream: &mut TcpStream, state: &Compatibility) -> Result<(u16, Va
         }
         ("POST", "/blocks" | "/transactions") => {
             if !head.json || head.length.is_none() {
-                return Err(Error::Invalid(
-                    "POST requires application/json and Content-Length",
-                ));
+                return Err(Error::Invalid("POST requires application/json and Content-Length"));
             }
             let body = read_body(stream, head.length).await?;
             // Deserialize the original bytes so duplicate and unknown fields fail.
@@ -154,12 +141,7 @@ pub async fn serve(mut stream: TcpStream, state: Arc<Compatibility>) {
     })
     .await;
 }
-async fn request(
-    address: SocketAddr,
-    method: &str,
-    path: &str,
-    body: Option<&[u8]>,
-) -> Result<(u16, Vec<u8>)> {
+async fn request(address: SocketAddr, method: &str, path: &str, body: Option<&[u8]>) -> Result<(u16, Vec<u8>)> {
     timeout(Duration::from_secs(5), async {
         let mut stream = TcpStream::connect(address).await?;
         let body = body.unwrap_or_default();
@@ -190,11 +172,7 @@ struct Download {
     blocks: Vec<Block>,
     bytes: usize,
 }
-async fn synchronize(
-    address: SocketAddr,
-    state: &Compatibility,
-    sync: &mut Synchronization,
-) -> Result<()> {
+async fn synchronize(address: SocketAddr, state: &Compatibility, sync: &mut Synchronization) -> Result<()> {
     let (status, body) = request(address, "GET", "/tip", None).await?;
     if status != 200 {
         return Err(Error::Invalid("Grupa 1 /tip failed (peer may be offline)"));
@@ -214,12 +192,7 @@ async fn synchronize(
                 return Err(Error::Invalid("Grupa 1 tip height does not match its hash"));
             }
         } else if sync.download.is_none() {
-            sync.download = Some(Download {
-                target: tip.hash,
-                height: tip.height,
-                blocks: vec![],
-                bytes: 0,
-            });
+            sync.download = Some(Download { target: tip.hash, height: tip.height, blocks: vec![], bytes: 0 });
         }
     }
     // Keep the backward walk across ticks. Only apply once a known parent is
@@ -228,12 +201,7 @@ async fn synchronize(
         let Some(download) = &mut sync.download else {
             break;
         };
-        let known = state
-            .ledger
-            .lock()
-            .unwrap()
-            .entries
-            .contains_key(&download.target);
+        let known = state.ledger.lock().unwrap().entries.contains_key(&download.target);
         if known {
             let download = sync.download.take().unwrap();
             let mut ledger = state.ledger.lock().unwrap();
@@ -246,32 +214,20 @@ async fn synchronize(
             break;
         }
         if download.height == 0 {
-            return Err(Error::Invalid(
-                "Grupa 1 branch does not reach the zero genesis",
-            ));
+            return Err(Error::Invalid("Grupa 1 branch does not reach the zero genesis"));
         }
-        let (status, body) = request(
-            address,
-            "GET",
-            &format!("/blocks/{}", download.target),
-            None,
-        )
-        .await?;
+        let (status, body) = request(address, "GET", &format!("/blocks/{}", download.target), None).await?;
         if status != 200 {
             return Err(Error::Invalid("Grupa 1 ancestor fetch failed"));
         }
         let block: Block = serde_json::from_slice(&body)?;
         if block.hash() != download.target || block.height != download.height {
-            return Err(Error::Invalid(
-                "Grupa 1 block does not match requested hash/height",
-            ));
+            return Err(Error::Invalid("Grupa 1 block does not match requested hash/height"));
         }
         block.validate()?;
         download.bytes += body.len();
         if download.bytes > 32 * MAX_BODY {
-            return Err(Error::Invalid(
-                "Grupa 1 catch-up exceeds 32 MiB; retry from a nearer peer",
-            ));
+            return Err(Error::Invalid("Grupa 1 catch-up exceeds 32 MiB; retry from a nearer peer"));
         }
         download.target = block.prev_hash;
         download.height -= 1;
@@ -289,9 +245,7 @@ async fn synchronize(
                 .take(BATCH)
                 .map(|h| (h, ledger.entries[&h].block.clone()))
                 .collect::<Vec<_>>(),
-            (0..len.min(BATCH))
-                .map(|offset| ledger.pending[(sync.transaction_cursor + offset) % len].clone())
-                .collect::<Vec<_>>(),
+            (0..len.min(BATCH)).map(|offset| ledger.pending[(sync.transaction_cursor + offset) % len].clone()).collect::<Vec<_>>(),
             len,
         )
     };
@@ -311,11 +265,7 @@ async fn synchronize(
             return Err(Error::Invalid("Grupa 1 transaction request failed"));
         }
     }
-    sync.transaction_cursor = if pending_len == 0 {
-        0
-    } else {
-        (sync.transaction_cursor + BATCH) % pending_len
-    };
+    sync.transaction_cursor = if pending_len == 0 { 0 } else { (sync.transaction_cursor + BATCH) % pending_len };
     Ok(())
 }
 pub async fn poll(address: SocketAddr, state: Arc<Compatibility>) {
@@ -330,13 +280,7 @@ pub async fn poll(address: SocketAddr, state: Arc<Compatibility>) {
             sync.sent.clear();
             sync.download = None;
         }
-        state.peers.lock().unwrap().insert(
-            address,
-            PeerStatus {
-                connected: result.is_ok(),
-                error: result.err().map(|e| e.to_string()),
-            },
-        );
+        state.peers.lock().unwrap().insert(address, PeerStatus { connected: result.is_ok(), error: result.err().map(|e| e.to_string()) });
     }
 }
 
@@ -350,29 +294,16 @@ mod tests {
     use tokio::{net::TcpListener, sync::mpsc};
 
     fn fixture(name: &str) -> Block {
-        let vectors: Value =
-            serde_json::from_str(include_str!("../../../tests/fixtures/grupa1-luka.json")).unwrap();
+        let vectors: Value = serde_json::from_str(include_str!("../../../tests/fixtures/grupa1-luka.json")).unwrap();
         serde_json::from_value(vectors[name]["block"].clone()).unwrap()
     }
-    async fn start(
-        state: Arc<Compatibility>,
-        peers: Vec<SavedPeer>,
-    ) -> (peer::Network, SocketAddr, mpsc::Receiver<peer::Event>) {
+    async fn start(state: Arc<Compatibility>, peers: Vec<SavedPeer>) -> (peer::Network, SocketAddr, mpsc::Receiver<peer::Event>) {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         drop(listener);
         let (events, receiver) = mpsc::channel(32);
-        let network = peer::start_compatible(
-            address,
-            vec![],
-            events,
-            false,
-            1,
-            None,
-            Some(super::super::Config { state, peers }),
-        )
-        .await
-        .unwrap();
+        let network =
+            peer::start_compatible(address, vec![], events, false, 1, None, Some(super::super::Config { state, peers })).await.unwrap();
         (network, address, receiver)
     }
     fn saved(address: SocketAddr) -> SavedPeer {
@@ -395,129 +326,31 @@ mod tests {
         let (network, address, mut events) = start(state.clone(), vec![]).await;
         let (status, body) = request(address, "GET", "/tip", None).await.unwrap();
         assert_eq!(status, 200);
-        assert_eq!(
-            serde_json::from_slice::<Value>(&body).unwrap()["hash"],
-            grupa1::GENESIS.to_string()
-        );
+        assert_eq!(serde_json::from_slice::<Value>(&body).unwrap()["hash"], grupa1::GENESIS.to_string());
         let block = fixture("one");
         let mut invalid = serde_json::to_value(&block).unwrap();
         invalid["timestamp"] = 0.into();
-        assert_eq!(
-            request(
-                address,
-                "POST",
-                "/blocks",
-                Some(&serde_json::to_vec(&invalid).unwrap())
-            )
-            .await
-            .unwrap()
-            .0,
-            400
-        );
-        assert_eq!(
-            request(
-                address,
-                "POST",
-                "/blocks",
-                Some(&serde_json::to_vec(&block).unwrap())
-            )
-            .await
-            .unwrap()
-            .0,
-            200
-        );
-        assert_eq!(
-            request(address, "GET", &format!("/blocks/{}", block.hash()), None)
-                .await
-                .unwrap()
-                .0,
-            200
-        );
-        assert_eq!(
-            request(
-                address,
-                "GET",
-                &format!("/blocks/{}", crate::protocol::Bytes([0x42; 32])),
-                None
-            )
-            .await
-            .unwrap()
-            .0,
-            404
-        );
+        assert_eq!(request(address, "POST", "/blocks", Some(&serde_json::to_vec(&invalid).unwrap())).await.unwrap().0, 400);
+        assert_eq!(request(address, "POST", "/blocks", Some(&serde_json::to_vec(&block).unwrap())).await.unwrap().0, 200);
+        assert_eq!(request(address, "GET", &format!("/blocks/{}", block.hash()), None).await.unwrap().0, 200);
+        assert_eq!(request(address, "GET", &format!("/blocks/{}", crate::protocol::Bytes([0x42; 32])), None).await.unwrap().0, 404);
         let tx = fixture("two").transactions[0].clone();
-        assert_eq!(
-            request(
-                address,
-                "POST",
-                "/transactions",
-                Some(&serde_json::to_vec(&tx).unwrap())
-            )
-            .await
-            .unwrap()
-            .0,
-            202
-        );
+        assert_eq!(request(address, "POST", "/transactions", Some(&serde_json::to_vec(&tx).unwrap())).await.unwrap().0, 202);
         let mut invalid = tx.clone();
         invalid.value = "ffffff".into();
-        assert_eq!(
-            request(
-                address,
-                "POST",
-                "/transactions",
-                Some(&serde_json::to_vec(&invalid).unwrap())
-            )
-            .await
-            .unwrap()
-            .0,
-            400
-        );
+        assert_eq!(request(address, "POST", "/transactions", Some(&serde_json::to_vec(&invalid).unwrap())).await.unwrap().0, 400);
         // A later child may wait; arrival of the parent applies both in order.
-        assert_eq!(
-            request(
-                address,
-                "POST",
-                "/blocks",
-                Some(&serde_json::to_vec(&fixture("three")).unwrap())
-            )
-            .await
-            .unwrap()
-            .0,
-            202
-        );
-        assert_eq!(
-            request(
-                address,
-                "POST",
-                "/blocks",
-                Some(&serde_json::to_vec(&fixture("two")).unwrap())
-            )
-            .await
-            .unwrap()
-            .0,
-            200
-        );
+        assert_eq!(request(address, "POST", "/blocks", Some(&serde_json::to_vec(&fixture("three")).unwrap())).await.unwrap().0, 202);
+        assert_eq!(request(address, "POST", "/blocks", Some(&serde_json::to_vec(&fixture("two")).unwrap())).await.unwrap().0, 200);
         assert_eq!(state.ledger.lock().unwrap().head().block.height, 3);
-        assert!(
-            events.try_recv().is_err(),
-            "HTTP must not create a native handshake session"
-        );
+        assert!(events.try_recv().is_err(), "HTTP must not create a native handshake session");
         let mut native = TcpStream::connect(address).await.unwrap();
         native.write_all(b"{\"type\":\"get_tip\"}\n").await.unwrap();
-        let peer::Event::Connected {
-            sender,
-            close: _close,
-            ..
-        } = timeout(Duration::from_secs(1), events.recv())
-            .await
-            .unwrap()
-            .unwrap()
+        let peer::Event::Connected { sender, close: _close, .. } = timeout(Duration::from_secs(1), events.recv()).await.unwrap().unwrap()
         else {
             panic!("native session");
         };
-        sender
-            .try_send(crate::network::wire::Message::GetTip {})
-            .unwrap();
+        sender.try_send(crate::network::wire::Message::GetTip {}).unwrap();
         let mut line = [0; 19];
         native.read_exact(&mut line).await.unwrap();
         assert_eq!(&line, b"{\"type\":\"get_tip\"}\n");
@@ -533,33 +366,13 @@ mod tests {
         let (remote_b, address_b, mut b_events) = start(b.clone(), vec![]).await;
         let (remote_c, address_c, mut c_events) = start(c.clone(), vec![]).await;
         a.ledger.lock().unwrap().accept(fixture("one")).unwrap();
-        a.ledger
-            .lock()
-            .unwrap()
-            .admit(fixture("two").transactions[0].clone())
-            .unwrap();
-        let (local, _, mut a_events) =
-            start(a.clone(), vec![saved(address_b), saved(address_c)]).await;
-        wait_for(|| {
-            b.ledger.lock().unwrap().pending.len() == 1
-                && c.ledger.lock().unwrap().pending.len() == 1
-        })
-        .await;
+        a.ledger.lock().unwrap().admit(fixture("two").transactions[0].clone()).unwrap();
+        let (local, _, mut a_events) = start(a.clone(), vec![saved(address_b), saved(address_c)]).await;
+        wait_for(|| b.ledger.lock().unwrap().pending.len() == 1 && c.ledger.lock().unwrap().pending.len() == 1).await;
         b.ledger.lock().unwrap().accept(fixture("two")).unwrap();
-        wait_for(|| {
-            a.ledger.lock().unwrap().head().block.height == 2
-                && c.ledger.lock().unwrap().head().block.height == 2
-        })
-        .await;
-        assert!(
-            a_events.try_recv().is_err()
-                && b_events.try_recv().is_err()
-                && c_events.try_recv().is_err()
-        );
-        local.set_compatibility(super::super::Config {
-            state: a.clone(),
-            peers: vec![saved(address_b)],
-        });
+        wait_for(|| a.ledger.lock().unwrap().head().block.height == 2 && c.ledger.lock().unwrap().head().block.height == 2).await;
+        assert!(a_events.try_recv().is_err() && b_events.try_recv().is_err() && c_events.try_recv().is_err());
+        local.set_compatibility(super::super::Config { state: a.clone(), peers: vec![saved(address_b)] });
         wait_for(|| !a.peers.lock().unwrap().contains_key(&address_c)).await;
         local.shutdown().await;
         remote_b.shutdown().await;
@@ -577,10 +390,7 @@ mod tests {
             "Content-Type: application/json\r\n",
         ] {
             let mut stream = TcpStream::connect(address).await.unwrap();
-            stream
-                .write_all(format!("POST /blocks HTTP/1.1\r\n{headers}\r\n{{}}").as_bytes())
-                .await
-                .unwrap();
+            stream.write_all(format!("POST /blocks HTTP/1.1\r\n{headers}\r\n{{}}").as_bytes()).await.unwrap();
             let head = read_head(&mut stream).await.unwrap();
             assert!(head.first.starts_with("HTTP/1.1 400"));
         }

@@ -14,8 +14,8 @@ use crate::{
     protocol::{Block, params::genesis},
     render,
     settings::{
-        CompatibilityProfile, MiningThreads, SavedPeer, Settings, available_threads,
-        configured_peer, configured_peer_with_default, peer_address,
+        CompatibilityProfile, MiningThreads, SavedPeer, Settings, available_threads, configured_peer, configured_peer_with_default,
+        peer_address,
     },
 };
 use ed25519_dalek::SigningKey;
@@ -35,10 +35,7 @@ use tokio::{
     sync::mpsc,
 };
 pub fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
 }
 struct Connection {
     sender: peer::Sender,
@@ -74,17 +71,10 @@ pub struct Node {
 }
 impl Node {
     fn hello(&self) -> Message {
-        Message::Hello {
-            version: VERSION,
-            genesis: genesis().hash(),
-            identity: crypto::public_key(&self.key),
-        }
+        Message::Hello { version: VERSION, genesis: genesis().hash(), identity: crypto::public_key(&self.key) }
     }
     fn tip(&self) -> Message {
-        Message::Tip {
-            hash: self.chain.tip,
-            height: self.chain.head().block.height,
-        }
+        Message::Tip { hash: self.chain.tip, height: self.chain.head().block.height }
     }
     fn send(&mut self, id: u64, message: Message) {
         if let Some(peer) = self.peers.get(&id)
@@ -94,12 +84,7 @@ impl Node {
         }
     }
     fn broadcast(&mut self, message: Message) {
-        let ids: Vec<_> = self
-            .peers
-            .iter()
-            .filter(|(_, p)| p.ready)
-            .map(|(id, _)| *id)
-            .collect();
+        let ids: Vec<_> = self.peers.iter().filter(|(_, p)| p.ready).map(|(id, _)| *id).collect();
         for id in ids {
             self.send(id, message.clone());
         }
@@ -129,23 +114,16 @@ impl Node {
         let pending = Arc::new(AtomicBool::new(false));
         self.mining_result_pending = pending.clone();
         let threads = self.config.threads.unwrap_or_default().resolved();
-        match mining::start_with_difficulty(
-            block,
-            threads,
-            self.settings.mining_difficulty,
-            move |block| {
-                // Never block shutdown on a full coordinator queue.
-                if events.try_send(Event::Mined { generation, block }).is_ok() {
-                    pending.store(true, Ordering::Release);
-                }
-            },
-        ) {
+        match mining::start_with_difficulty(block, threads, self.settings.mining_difficulty, move |block| {
+            // Never block shutdown on a full coordinator queue.
+            if events.try_send(Event::Mined { generation, block }).is_ok() {
+                pending.store(true, Ordering::Release);
+            }
+        }) {
             Ok(job) => self.job = Some(job),
             Err(error) => {
                 self.mining = false;
-                self.note(format!(
-                    "Mining stopped: could not start {threads} workers: {error}"
-                ));
+                self.note(format!("Mining stopped: could not start {threads} workers: {error}"));
             }
         }
     }
@@ -162,17 +140,12 @@ impl Node {
                 self.sync.forget(&hash);
                 self.broadcast(Message::Block { block });
                 if changed {
-                    self.owned
-                        .update(&self.chain, crypto::public_key(&self.key));
+                    self.owned.update(&self.chain, crypto::public_key(&self.key));
                     let detached = self.chain.detached(old_tip);
                     self.pool.reconcile(&self.chain.head().state, detached);
                     self.restart_miner();
                     self.broadcast(self.tip());
-                    self.note(format!(
-                        "tip {} height {}",
-                        self.chain.tip,
-                        self.chain.head().block.height
-                    ));
+                    self.note(format!("tip {} height {}", self.chain.tip, self.chain.head().block.height));
                 }
             }
             Err(Error::UnknownParent(parent)) => {
@@ -212,8 +185,7 @@ impl Node {
                 .iter()
                 .filter(|(_, b)| {
                     self.chain.entries.contains_key(&b.previous)
-                        && b.timestamp
-                            <= now.saturating_add(crate::protocol::params::MAX_FUTURE_SECONDS)
+                        && b.timestamp <= now.saturating_add(crate::protocol::params::MAX_FUTURE_SECONDS)
                 })
                 .map(|(h, _)| *h)
                 .collect();
@@ -231,12 +203,7 @@ impl Node {
         let Some(peer) = self.peers.get(&id) else {
             return;
         };
-        if let Message::Hello {
-            version,
-            genesis: chain,
-            identity,
-        } = message
-        {
+        if let Message::Hello { version, genesis: chain, identity } = message {
             if version != VERSION
                 || chain != genesis().hash()
                 || crypto::valid_key(identity).is_err()
@@ -266,20 +233,14 @@ impl Node {
         match message {
             Message::GetTip {} => self.send(id, self.tip()),
             Message::Tip { hash, .. } => {
-                if !self.chain.entries.contains_key(&hash) && !self.sync.waiting.contains_key(&hash)
-                {
+                if !self.chain.entries.contains_key(&hash) && !self.sync.waiting.contains_key(&hash) {
                     self.sync.want(hash);
                     self.send(id, Message::GetBlock { hash });
                 }
             }
             Message::GetBlock { hash } => {
                 if let Some(entry) = self.chain.entries.get(&hash) {
-                    self.send(
-                        id,
-                        Message::Block {
-                            block: entry.block.clone(),
-                        },
-                    );
+                    self.send(id, Message::Block { block: entry.block.clone() });
                 }
             }
             Message::Block { block } => {
@@ -289,11 +250,7 @@ impl Node {
                 self.retry_waiting(now());
             }
             Message::Transaction { transaction } => {
-                if matches!(
-                    self.pool
-                        .admit(transaction.clone(), &self.chain.head().state),
-                    Ok(true)
-                ) {
+                if matches!(self.pool.admit(transaction.clone(), &self.chain.head().state), Ok(true)) {
                     self.broadcast(Message::Transaction { transaction });
                     self.restart_miner();
                 }
@@ -314,9 +271,7 @@ impl Node {
             .sync
             .wanted
             .iter()
-            .filter(|hash| {
-                self.chain.entries.contains_key(hash) || self.sync.waiting.contains_key(hash)
-            })
+            .filter(|hash| self.chain.entries.contains_key(hash) || self.sync.waiting.contains_key(hash))
             .copied()
             .collect();
         for hash in known {
@@ -326,10 +281,7 @@ impl Node {
             .sync
             .waiting
             .values()
-            .filter(|b| {
-                !self.chain.entries.contains_key(&b.previous)
-                    && !self.sync.waiting.contains_key(&b.previous)
-            })
+            .filter(|b| !self.chain.entries.contains_key(&b.previous) && !self.sync.waiting.contains_key(&b.previous))
             .map(|b| b.previous)
             .collect();
         for hash in missing {
@@ -340,14 +292,9 @@ impl Node {
         }
         // Anti-entropy recovers dropped transaction announcements too.
         let len = self.pool.transactions.len();
-        let transactions: Vec<_> = (0..len.min(4))
-            .map(|offset| self.pool.transactions[(self.announcement_cursor + offset) % len].clone())
-            .collect();
-        self.announcement_cursor = if len == 0 {
-            0
-        } else {
-            (self.announcement_cursor + 4) % len
-        };
+        let transactions: Vec<_> =
+            (0..len.min(4)).map(|offset| self.pool.transactions[(self.announcement_cursor + offset) % len].clone()).collect();
+        self.announcement_cursor = if len == 0 { 0 } else { (self.announcement_cursor + 4) % len };
         for transaction in transactions {
             self.broadcast(Message::Transaction { transaction });
         }
@@ -361,29 +308,16 @@ impl Node {
             self.compat_candidate = None;
             return Ok(());
         }
-        let candidate = self
-            .compatibility
-            .ledger
-            .lock()
-            .unwrap()
-            .candidate(crypto::public_key(&self.key));
-        if self.compat_candidate.as_ref() != Some(&candidate)
-            || self.compat_job.as_ref().is_none_or(Job::is_finished)
-        {
+        let candidate = self.compatibility.ledger.lock().unwrap().candidate(crypto::public_key(&self.key));
+        if self.compat_candidate.as_ref() != Some(&candidate) || self.compat_job.as_ref().is_none_or(Job::is_finished) {
             self.compat_job.take();
-            self.compat_job = Some(crate::network::compat::grupa1::start_miner(
-                candidate.clone(),
-                self.compatibility.clone(),
-            )?);
+            self.compat_job = Some(crate::network::compat::grupa1::start_miner(candidate.clone(), self.compatibility.clone())?);
             self.compat_candidate = Some(candidate);
         }
         Ok(())
     }
     fn maintain_miner(&mut self) {
-        if self.mining
-            && self.job.as_ref().is_none_or(|job| job.is_finished())
-            && !self.mining_result_pending.load(Ordering::Acquire)
-        {
+        if self.mining && self.job.as_ref().is_none_or(|job| job.is_finished()) && !self.mining_result_pending.load(Ordering::Acquire) {
             self.restart_miner();
         }
     }
@@ -470,10 +404,7 @@ impl Node {
             return Ok(());
         }
         if online {
-            self.network = Some(
-                self.start_network(self.config.listen.expect("resolved address"))
-                    .await?,
-            );
+            self.network = Some(self.start_network(self.config.listen.expect("resolved address")).await?);
             self.compatibility.peers.lock().unwrap().clear();
             self.note("Network ONLINE: listener and peer reconnection enabled".into());
         } else {
@@ -507,13 +438,13 @@ impl Node {
                     }
                     hash = block.previous;
                 }
-                serde_json::to_string_pretty(&json!({"total_entries_including_forks":self.chain.entries.len(),"recent_canonical_blocks":blocks})).unwrap_or_default()
+                serde_json::to_string_pretty(
+                    &json!({"total_entries_including_forks":self.chain.entries.len(),"recent_canonical_blocks":blocks}),
+                )
+                .unwrap_or_default()
             }
             3 => serde_json::to_string_pretty(&self.pool.transactions).unwrap_or_default(),
-            4 => serde_json::to_string_pretty(
-                &json!({"wanted":self.sync.wanted,"waiting":self.sync.waiting}),
-            )
-            .unwrap_or_default(),
+            4 => serde_json::to_string_pretty(&json!({"wanted":self.sync.wanted,"waiting":self.sync.waiting})).unwrap_or_default(),
             _ => format!(
                 "{:#?}\n\nData: {}\nNode log: {}\nDiagnostics: {}\n\nChain lives in memory. JSON exports are diagnostics, not persistence.\nIdentity seed is private and is never displayed here.",
                 self.config,
@@ -524,12 +455,10 @@ impl Node {
         }
     }
     fn discovery(&self) -> Option<crate::network::discovery::Discovery> {
-        self.config
-            .discover
-            .then(|| crate::network::discovery::Discovery {
-                port: self.config.discover_port.get(),
-                identity: crypto::public_key(&self.key),
-            })
+        self.config.discover.then(|| crate::network::discovery::Discovery {
+            port: self.config.discover_port.get(),
+            identity: crypto::public_key(&self.key),
+        })
     }
     fn miner_label(&self, miner: crate::protocol::PublicKey) -> String {
         if miner == crypto::public_key(&self.key) {
@@ -538,37 +467,18 @@ impl Node {
         self.peers
             .values()
             .find(|p| p.ready && p.identity == Some(miner))
-            .map_or_else(
-                || miner.to_string()[..8].to_owned(),
-                |p| {
-                    self.session_alias(p)
-                        .unwrap_or_else(|| p.address.to_string())
-                },
-            )
+            .map_or_else(|| miner.to_string()[..8].to_owned(), |p| self.session_alias(p).unwrap_or_else(|| p.address.to_string()))
     }
     fn compat_config(&self) -> crate::network::compat::Config {
-        crate::network::compat::Config {
-            state: self.compatibility.clone(),
-            peers: self.settings.peers.clone(),
-        }
+        crate::network::compat::Config { state: self.compatibility.clone(), peers: self.settings.peers.clone() }
     }
     fn peer_addresses(&self) -> Vec<std::net::SocketAddr> {
         self.config
             .peers
             .iter()
             .copied()
-            .filter(|address| {
-                !self.settings.peers.iter().any(|p| {
-                    p.address == *address && p.compatibility != CompatibilityProfile::Native
-                })
-            })
-            .chain(
-                self.settings
-                    .peers
-                    .iter()
-                    .filter(|p| p.compatibility == CompatibilityProfile::Native)
-                    .map(|p| p.address),
-            )
+            .filter(|address| !self.settings.peers.iter().any(|p| p.address == *address && p.compatibility != CompatibilityProfile::Native))
+            .chain(self.settings.peers.iter().filter(|p| p.compatibility == CompatibilityProfile::Native).map(|p| p.address))
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect()
@@ -579,9 +489,7 @@ impl Node {
             .iter()
             .find(|peer| {
                 peer.address == session.address
-                    || session.identity.is_some_and(|identity| {
-                        self.peer_identities.get(&peer.address) == Some(&identity)
-                    })
+                    || session.identity.is_some_and(|identity| self.peer_identities.get(&peer.address) == Some(&identity))
             })
             .map(|peer| peer.alias.clone())
     }
@@ -614,29 +522,17 @@ impl Node {
         }
         // Cancel removed outgoing sessions immediately; inbound sessions remain welcome.
         self.peers.retain(|_, session| {
-            (!self.peer_identities.contains_key(&session.address)
-                || addresses.contains(&session.address))
-                && !self.settings.peers.iter().any(|p| {
-                    p.address == session.address && p.compatibility != CompatibilityProfile::Native
-                })
+            (!self.peer_identities.contains_key(&session.address) || addresses.contains(&session.address))
+                && !self.settings.peers.iter().any(|p| p.address == session.address && p.compatibility != CompatibilityProfile::Native)
         });
-        self.note(format!(
-            "Saved {} peers to settings.json",
-            self.settings.peers.len()
-        ));
+        self.note(format!("Saved {} peers to settings.json", self.settings.peers.len()));
         Ok(())
     }
     fn add_peer(&mut self, old: Option<std::net::SocketAddr>, peer: SavedPeer) -> Result<()> {
         let mut peers = self.settings.peers.clone();
         if let Some(old) = old {
-            let index = peers
-                .iter()
-                .position(|p| p.address == old)
-                .ok_or(Error::Invalid("saved peer not found"))?;
-            if peers
-                .iter()
-                .any(|p| p.address == peer.address && p.address != old)
-            {
+            let index = peers.iter().position(|p| p.address == old).ok_or(Error::Invalid("saved peer not found"))?;
+            if peers.iter().any(|p| p.address == peer.address && p.address != old) {
                 return Err(Error::Invalid("a peer with this address is already saved"));
             }
             peers[index] = peer;
@@ -651,11 +547,8 @@ impl Node {
         let mut address = self.config.listen.expect("resolved address");
         address.set_port(port.get());
         // Bind first so a busy port leaves the existing network intact.
-        let replacement = if self.network.is_some() && self.config.listen != Some(address) {
-            Some(self.start_network(address).await?)
-        } else {
-            None
-        };
+        let replacement =
+            if self.network.is_some() && self.config.listen != Some(address) { Some(self.start_network(address).await?) } else { None };
         let mut settings = self.settings.clone();
         settings.port = port;
         if let Err(error) = settings.save(&self.config.data_dir) {
@@ -680,19 +573,12 @@ impl Node {
         settings.mining_threads = threads;
         settings.save(&self.config.data_dir)?;
         self.settings = settings;
-        let changed = self.config.threads != Some(threads)
-            || self
-                .job
-                .as_ref()
-                .is_some_and(|job| job.worker_count() != threads.resolved());
+        let changed = self.config.threads != Some(threads) || self.job.as_ref().is_some_and(|job| job.worker_count() != threads.resolved());
         self.config.threads = Some(threads);
         if changed && self.mining {
             self.restart_miner();
         }
-        self.note(format!(
-            "Mining threads: {threads} ({} workers); saved to settings.json",
-            threads.resolved()
-        ));
+        self.note(format!("Mining threads: {threads} ({} workers); saved to settings.json", threads.resolved()));
         Ok(())
     }
     fn set_difficulty(&mut self, difficulty: u16) -> Result<()> {
@@ -704,9 +590,7 @@ impl Node {
         if changed && self.mining {
             self.restart_miner();
         }
-        self.note(format!(
-            "Mining difficulty: {difficulty} leading zero bits; saved to settings.json"
-        ));
+        self.note(format!("Mining difficulty: {difficulty} leading zero bits; saved to settings.json"));
         Ok(())
     }
     async fn command(&mut self, line: &str) -> Result<bool> {
@@ -718,44 +602,23 @@ impl Node {
             ["status"] => self.response(self.status().to_string()),
             ["identity"] => self.response(crypto::public_key(&self.key).to_string()),
             ["owned"] => self.response(self.owned.json(&self.chain.head().state).to_string()),
-            ["peer", "add", address, alias @ ..] => {
-                self.add_peer(None, configured_peer(address, alias)?)?
-            }
+            ["peer", "add", address, alias @ ..] => self.add_peer(None, configured_peer(address, alias)?)?,
             ["peer", "edit", old, address, alias @ ..] => {
                 let old = peer_address(old)?;
-                let profile = self
-                    .settings
-                    .peers
-                    .iter()
-                    .find(|p| p.address == old)
-                    .ok_or(Error::Invalid("saved peer not found"))?
-                    .compatibility;
-                self.add_peer(
-                    Some(old),
-                    configured_peer_with_default(address, alias, profile)?,
-                )?;
+                let profile =
+                    self.settings.peers.iter().find(|p| p.address == old).ok_or(Error::Invalid("saved peer not found"))?.compatibility;
+                self.add_peer(Some(old), configured_peer_with_default(address, alias, profile)?)?;
             }
             ["peer", "remove", address] => {
                 let address = peer_address(address)?;
-                let peers: Vec<_> = self
-                    .settings
-                    .peers
-                    .iter()
-                    .filter(|p| p.address != address)
-                    .cloned()
-                    .collect();
+                let peers: Vec<_> = self.settings.peers.iter().filter(|p| p.address != address).cloned().collect();
                 if peers.len() == self.settings.peers.len() {
                     return Err(Error::Invalid("saved peer not found"));
                 }
                 self.save_peers(peers)?;
             }
             ["grupa1", "status"] => {
-                let status = self
-                    .compatibility
-                    .ledger
-                    .lock()
-                    .unwrap()
-                    .summary(crypto::public_key(&self.key));
+                let status = self.compatibility.ledger.lock().unwrap().summary(crypto::public_key(&self.key));
                 self.response(status.to_string());
             }
             ["grupa1", "mining", mode @ ("on" | "off")] => {
@@ -765,78 +628,37 @@ impl Node {
             }
             ["grupa1", action @ ("paint" | "transfer"), parcel, value] => {
                 use crate::network::compat::grupa1::{Kind, Transaction};
-                let parcel = parcel
-                    .parse()
-                    .map_err(|_| Error::Invalid("Grupa 1 parcel must be 0–255"))?;
+                let parcel = parcel.parse().map_err(|_| Error::Invalid("Grupa 1 parcel must be 0–255"))?;
                 let sender = crypto::public_key(&self.key);
-                let nonce = *self
-                    .compatibility
-                    .ledger
-                    .lock()
-                    .unwrap()
-                    .projected()
-                    .nonces
-                    .get(&sender)
-                    .unwrap_or(&0);
+                let nonce = *self.compatibility.ledger.lock().unwrap().projected().nonces.get(&sender).unwrap_or(&0);
                 let (kind, value) = if *action == "paint" {
                     (Kind::Paint, crate::colors::parse(value)?.to_string())
                 } else {
                     (Kind::Transfer, value.to_string())
                 };
-                let mut tx = Transaction {
-                    kind,
-                    sender,
-                    nonce,
-                    parcel,
-                    value,
-                    signature: Default::default(),
-                };
+                let mut tx = Transaction { kind, sender, nonce, parcel, value, signature: Default::default() };
                 tx.sign(&self.key);
-                self.compatibility
-                    .ledger
-                    .lock()
-                    .unwrap()
-                    .admit(tx.clone())?;
+                self.compatibility.ledger.lock().unwrap().admit(tx.clone())?;
                 self.response(json!({"profile":"Grupa 1 - Luka", "submitted":tx.id()}).to_string());
                 self.maintain_compat_miner()?;
             }
             ["mining", mode @ ("on" | "off")] => {
                 self.mining = *mode == "on";
                 self.restart_miner();
-                self.note(format!(
-                    "Mining {}",
-                    if self.mining {
-                        "ON"
-                    } else {
-                        "OFF (worker stopped)"
-                    }
-                ));
+                self.note(format!("Mining {}", if self.mining { "ON" } else { "OFF (worker stopped)" }));
             }
-            ["port", port] => {
-                self.set_port(
-                    port.parse()
-                        .map_err(|_| Error::Invalid("port must be 1–65535"))?,
-                )
-                .await?
+            ["port", port] => self.set_port(port.parse().map_err(|_| Error::Invalid("port must be 1–65535"))?).await?,
+            ["difficulty", bits] => {
+                self.set_difficulty(bits.parse().map_err(|_| Error::Invalid("difficulty must be 23–256 leading zero bits"))?)?
             }
-            ["difficulty", bits] => self
-                .set_difficulty(bits.parse().map_err(|_| {
-                    Error::Invalid("difficulty must be 23–256 leading zero bits")
-                })?)?,
             ["threads", count] => self.set_threads(count.parse()?)?,
             ["network", mode @ ("on" | "off")] => self.set_online(*mode == "on").await?,
             ["export"] => self.export()?,
             ["export", path] => render::ppm(&self.chain.head().state, Path::new(path))?,
             ["paint" | "transfer", parcel, _] => {
-                let parcel: usize = parcel
-                    .parse()
-                    .map_err(|_| Error::Invalid("invalid parcel"))?;
+                let parcel: usize = parcel.parse().map_err(|_| Error::Invalid("invalid parcel"))?;
                 let projected = self.pool.projected(&self.chain.head().state);
-                let counter = projected
-                    .parcels
-                    .get(parcel)
-                    .ok_or(Error::Invalid("parcel out of range"))?
-                    .counter;
+                let counter = projected.parcels.get(parcel).ok_or(Error::Invalid("parcel out of range"))?.counter;
                 let mut tx = crate::cli::transaction(line, counter)?;
                 crypto::sign(&mut tx, &self.key);
                 self.pool.admit(tx.clone(), &self.chain.head().state)?;
@@ -856,30 +678,20 @@ pub async fn run(config: Config) -> Result<()> {
 
 pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
     // Validate the terminal before creating keys or opening network sockets.
-    let mut ui = if interactive {
-        Some(crate::tui::App::new()?)
-    } else {
-        None
-    };
+    let mut ui = if interactive { Some(crate::tui::App::new()?) } else { None };
     std::fs::create_dir_all(&config.data_dir)?;
     let settings = Settings::load(&config.data_dir)?;
     if config.threads.is_none() {
         config.threads = Some(settings.mining_threads);
     }
     if config.listen.is_none() {
-        config.listen = Some(std::net::SocketAddr::from((
-            [0, 0, 0, 0],
-            config.port.unwrap_or(settings.port).get(),
-        )));
+        config.listen = Some(std::net::SocketAddr::from(([0, 0, 0, 0], config.port.unwrap_or(settings.port).get())));
     }
     let key = match &config.key {
         Some(path) => crypto::load_key(path)?,
         None => crypto::load_or_create_key(&config.data_dir.join("identity.seed"))?,
     };
-    let log = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(config.data_dir.join("node.log"))?;
+    let log = std::fs::OpenOptions::new().create(true).append(true).open(config.data_dir.join("node.log"))?;
     let (events, mut receiver) = mpsc::channel(1024);
     let compatibility = Arc::new(crate::network::compat::Compatibility::default());
     let mut node = Node {
@@ -908,19 +720,12 @@ pub async fn run_with_ui(mut config: Config, interactive: bool) -> Result<()> {
         peer_identities: BTreeMap::new(),
     };
     if !node.config.offline {
-        node.network = Some(
-            node.start_network(node.config.listen.expect("resolved address"))
-                .await?,
-        );
+        node.network = Some(node.start_network(node.config.listen.expect("resolved address")).await?);
     }
     node.note(format!(
         "identity {} {} {} lag={}\n{}",
         crypto::public_key(&node.key),
-        if node.network.is_some() {
-            "listening"
-        } else {
-            "offline; configured address"
-        },
+        if node.network.is_some() { "listening" } else { "offline; configured address" },
         node.config.listen.expect("resolved address"),
         !node.config.no_lag,
         crate::cli::HELP
@@ -1016,12 +821,7 @@ mod tests {
     fn node() -> Node {
         let (events, _) = mpsc::channel(16);
         Node {
-            config: Config {
-                listen: Some("127.0.0.1:0".parse().unwrap()),
-                no_lag: true,
-                offline: true,
-                ..Config::default()
-            },
+            config: Config { listen: Some("127.0.0.1:0".parse().unwrap()), no_lag: true, offline: true, ..Config::default() },
             settings: Settings::default(),
             network: None,
             compatibility: Arc::new(crate::network::compat::Compatibility::default()),
@@ -1049,46 +849,29 @@ mod tests {
 
     #[tokio::test]
     async fn saved_peer_commands_are_atomic_and_preserve_other_preferences() {
-        let directory =
-            std::env::temp_dir().join(format!("pixel-saved-peers-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("pixel-saved-peers-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let mut node = node();
         node.config.data_dir = directory.clone();
-        node.command("peer add 192.0.2.1 Main workshop")
-            .await
-            .unwrap();
-        node.command("peer add [::1]:7002 Local IPv6")
-            .await
-            .unwrap();
-        node.command("peer add 192.0.2.1 Renamed peer")
-            .await
-            .unwrap();
+        node.command("peer add 192.0.2.1 Main workshop").await.unwrap();
+        node.command("peer add [::1]:7002 Local IPv6").await.unwrap();
+        node.command("peer add 192.0.2.1 Renamed peer").await.unwrap();
         assert_eq!(node.settings.peers.len(), 2);
         assert_eq!(node.settings.peers[0].alias, "Renamed peer");
         assert_eq!(node.peer_status()[0]["status"], "Offline");
         node.command("threads 3").await.unwrap();
         node.command("port 7003").await.unwrap();
         let original = Settings::load(&directory).unwrap();
-        for invalid in [
-            "peer add bad Nope",
-            "peer add 0.0.0.0 Nope",
-            "peer edit 192.0.2.1 [::1]:7002 Duplicate",
-            "peer remove 192.0.2.99",
-        ] {
+        for invalid in ["peer add bad Nope", "peer add 0.0.0.0 Nope", "peer edit 192.0.2.1 [::1]:7002 Duplicate", "peer remove 192.0.2.99"]
+        {
             assert!(node.command(invalid).await.is_err());
             assert_eq!(Settings::load(&directory).unwrap().peers, original.peers);
         }
         std::fs::create_dir(directory.join("settings.tmp")).unwrap();
-        assert!(
-            node.command("peer add 192.0.2.7 Failed save")
-                .await
-                .is_err()
-        );
+        assert!(node.command("peer add 192.0.2.7 Failed save").await.is_err());
         assert_eq!(node.settings.peers, original.peers);
         std::fs::remove_dir(directory.join("settings.tmp")).unwrap();
-        node.command("peer edit 192.0.2.1 192.0.2.2:7010 Moved peer")
-            .await
-            .unwrap();
+        node.command("peer edit 192.0.2.1 192.0.2.2:7010 Moved peer").await.unwrap();
         node.command("peer remove [::1]:7002").await.unwrap();
         let saved = Settings::load(&directory).unwrap();
         assert_eq!(saved.peers.len(), 1);
@@ -1102,47 +885,26 @@ mod tests {
 
     #[tokio::test]
     async fn compatibility_peer_commands_preserve_profiles_and_override_native_startup_targets() {
-        let directory =
-            std::env::temp_dir().join(format!("pixel-compat-peers-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("pixel-compat-peers-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let mut node = node();
         node.config.data_dir = directory.clone();
         node.config.peers.push("192.0.2.7:8080".parse().unwrap());
-        node.command("peer add 192.0.2.7 --compat grupa1-luka Luka")
-            .await
-            .unwrap();
+        node.command("peer add 192.0.2.7 --compat grupa1-luka Luka").await.unwrap();
         assert!(node.peer_addresses().is_empty());
-        assert_eq!(
-            node.peer_status()[0]["compatibility_label"],
-            "Grupa 1 - Luka"
-        );
-        node.command("peer edit 192.0.2.7:8080 192.0.2.7:8080 New alias")
-            .await
-            .unwrap();
-        assert_eq!(
-            node.settings.peers[0].compatibility,
-            CompatibilityProfile::Grupa1Luka
-        );
-        assert!(
-            node.command("peer add 192.0.2.8 --compat unknown Bad")
-                .await
-                .is_err()
-        );
-        assert_eq!(
-            Settings::load(&directory).unwrap().peers,
-            node.settings.peers
-        );
-        node.command("peer edit 192.0.2.7:8080 192.0.2.7:8080 --compat native Native")
-            .await
-            .unwrap();
+        assert_eq!(node.peer_status()[0]["compatibility_label"], "Grupa 1 - Luka");
+        node.command("peer edit 192.0.2.7:8080 192.0.2.7:8080 New alias").await.unwrap();
+        assert_eq!(node.settings.peers[0].compatibility, CompatibilityProfile::Grupa1Luka);
+        assert!(node.command("peer add 192.0.2.8 --compat unknown Bad").await.is_err());
+        assert_eq!(Settings::load(&directory).unwrap().peers, node.settings.peers);
+        node.command("peer edit 192.0.2.7:8080 192.0.2.7:8080 --compat native Native").await.unwrap();
         assert_eq!(node.peer_addresses().len(), 1);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[tokio::test]
     async fn port_changes_preserve_settings_and_existing_listener_on_bind_failure() {
-        let directory =
-            std::env::temp_dir().join(format!("pixel-port-change-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("pixel-port-change-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let mut node = node();
         node.config.data_dir = directory.clone();
@@ -1170,22 +932,16 @@ mod tests {
         let next = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = next.local_addr().unwrap();
         drop(next);
-        node.set_port(std::num::NonZeroU16::new(address.port()).unwrap())
-            .await
-            .unwrap();
+        node.set_port(std::num::NonZeroU16::new(address.port()).unwrap()).await.unwrap();
         assert!(tokio::net::TcpStream::connect(address).await.is_ok());
         assert!(tokio::net::TcpStream::connect(old).await.is_err());
-        assert_eq!(
-            Settings::load(&directory).unwrap().mining_threads,
-            MiningThreads::All
-        );
+        assert_eq!(Settings::load(&directory).unwrap().mining_threads, MiningThreads::All);
         node.set_online(false).await.unwrap();
         std::fs::remove_dir_all(directory).unwrap();
     }
 
     fn fixture(name: &str) -> Block {
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
         serde_json::from_value(vectors[name]["block"].clone()).unwrap()
     }
 
@@ -1194,13 +950,7 @@ mod tests {
         let (close, _) = tokio::sync::oneshot::channel();
         node.peers.insert(
             id,
-            Connection {
-                sender,
-                address: format!("127.0.0.1:{id}").parse().unwrap(),
-                ready: true,
-                _close: close,
-                identity: None,
-            },
+            Connection { sender, address: format!("127.0.0.1:{id}").parse().unwrap(), ready: true, _close: close, identity: None },
         );
         messages
     }
@@ -1216,11 +966,7 @@ mod tests {
     #[test]
     fn invalid_pow_orphans_are_rejected_without_requesting_their_parents() {
         let mut node = node();
-        let block = Block {
-            previous: crate::protocol::Bytes([42; 32]),
-            height: 2,
-            ..genesis()
-        };
+        let block = Block { previous: crate::protocol::Bytes([42; 32]), height: 2, ..genesis() };
         let hash = block.hash();
         assert!(!crate::protocol::validation::valid_pow(hash));
         let mut messages = ready_peer(&mut node, 1);
@@ -1240,25 +986,11 @@ mod tests {
         assert!(matches!(drain(&mut messages).as_slice(),
             [Message::GetBlock { hash }] if *hash == two.previous));
         node.message(1, Message::Block { block: two.clone() });
-        node.message(
-            1,
-            Message::Tip {
-                hash: two.hash(),
-                height: u64::MAX,
-            },
-        );
-        node.message(
-            1,
-            Message::Block {
-                block: fixture("three"),
-            },
-        );
+        node.message(1, Message::Tip { hash: two.hash(), height: u64::MAX });
+        node.message(1, Message::Block { block: fixture("three") });
         assert!(drain(&mut messages).is_empty());
         assert_eq!(node.sync.waiting.len(), 2);
-        assert_eq!(
-            node.sync.wanted.iter().copied().collect::<Vec<_>>(),
-            vec![two.previous]
-        );
+        assert_eq!(node.sync.wanted.iter().copied().collect::<Vec<_>>(), vec![two.previous]);
     }
 
     #[test]
@@ -1267,13 +999,7 @@ mod tests {
         node.key = SigningKey::from_bytes(&[2; 32]);
         let mut messages = ready_peer(&mut node, 1);
         let three = fixture("three");
-        node.message(
-            1,
-            Message::Tip {
-                hash: three.hash(),
-                height: 0,
-            },
-        );
+        node.message(1, Message::Tip { hash: three.hash(), height: 0 });
         for name in ["three", "two", "one"] {
             let block = fixture(name);
             assert!(matches!(drain(&mut messages).as_slice(),
@@ -1282,22 +1008,13 @@ mod tests {
         }
         let relayed: Vec<_> = drain(&mut messages)
             .into_iter()
-            .filter_map(|message| {
-                if let Message::Block { block } = message {
-                    Some(block.hash())
-                } else {
-                    None
-                }
-            })
+            .filter_map(|message| if let Message::Block { block } = message { Some(block.hash()) } else { None })
             .collect();
         let mut expected = Chain::default();
         for name in ["one", "two", "three"] {
             expected.insert(fixture(name), now()).unwrap();
         }
-        assert_eq!(
-            relayed,
-            [fixture("one").hash(), fixture("two").hash(), three.hash()]
-        );
+        assert_eq!(relayed, [fixture("one").hash(), fixture("two").hash(), three.hash()]);
         assert_eq!(node.chain.tip, expected.tip);
         assert_eq!(node.chain.head().state, expected.head().state);
         assert!(node.owned.parcels.contains_key(&181));
@@ -1338,12 +1055,8 @@ mod tests {
         node.retry_waiting(now());
         assert!(!node.chain.entries.contains_key(&invalid.hash()));
         assert!(node.sync.waiting.is_empty());
-        assert!(
-            drain(&mut messages)
-                .into_iter()
-                .all(|message| !matches!(message,
-            Message::Block { block } if block.hash() == invalid.hash()))
-        );
+        assert!(drain(&mut messages).into_iter().all(|message| !matches!(message,
+            Message::Block { block } if block.hash() == invalid.hash())));
         assert_eq!(node.chain.head().state.parcels[181].counter, 0);
     }
 
@@ -1352,12 +1065,7 @@ mod tests {
         let mut node = node();
         let mut messages = ready_peer(&mut node, 1);
         for name in ["three", "two", "one", "fork4", "fork3", "fork2"] {
-            node.message(
-                1,
-                Message::Block {
-                    block: fixture(name),
-                },
-            );
+            node.message(1, Message::Block { block: fixture(name) });
             drain(&mut messages);
         }
         let mut expected = Chain::default();
@@ -1376,8 +1084,7 @@ mod tests {
 
     #[test]
     fn periodic_retries_and_transaction_announcements_rotate_to_all_ready_peers() {
-        let directory =
-            std::env::temp_dir().join(format!("pixel-catchup-periodic-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("pixel-catchup-periodic-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let mut node = node();
         node.config.data_dir = directory.clone();
@@ -1404,18 +1111,13 @@ mod tests {
             node.periodic().unwrap();
             let a = drain(&mut first);
             let b = drain(&mut second);
-            assert_eq!(
-                serde_json::to_value(&a).unwrap(),
-                serde_json::to_value(&b).unwrap()
-            );
+            assert_eq!(serde_json::to_value(&a).unwrap(), serde_json::to_value(&b).unwrap());
             let mut batch_requests = Vec::new();
             let mut batch_transactions = Vec::new();
             for message in a {
                 match message {
                     Message::GetBlock { hash } => batch_requests.push(hash),
-                    Message::Transaction { transaction } => {
-                        batch_transactions.push(transaction.id())
-                    }
+                    Message::Transaction { transaction } => batch_transactions.push(transaction.id()),
                     _ => {}
                 }
             }
@@ -1423,21 +1125,10 @@ mod tests {
             assert_eq!(batch_transactions.len(), 4);
             requests.extend(batch_requests);
             announcements.extend(batch_transactions);
-            assert!(matches!(
-                drain(&mut handshaking).as_slice(),
-                [Message::Hello { .. }]
-            ));
+            assert!(matches!(drain(&mut handshaking).as_slice(), [Message::Hello { .. }]));
         }
         assert_eq!(&requests[..10], wanted.as_slice());
-        assert_eq!(
-            &announcements[..10],
-            node.pool
-                .transactions
-                .iter()
-                .map(|tx| tx.id())
-                .collect::<Vec<_>>()
-                .as_slice()
-        );
+        assert_eq!(&announcements[..10], node.pool.transactions.iter().map(|tx| tx.id()).collect::<Vec<_>>().as_slice());
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1447,18 +1138,12 @@ mod tests {
         node.mining = true;
         node.generation = 42;
         node.mining_result_pending.store(true, Ordering::Release);
-        node.job = Some(Job {
-            cancel: Arc::new(AtomicBool::new(false)),
-            handles: vec![std::thread::spawn(|| {})],
-        });
+        node.job = Some(Job { cancel: Arc::new(AtomicBool::new(false)), handles: vec![std::thread::spawn(|| {})] });
         while !node.job.as_ref().unwrap().is_finished() {
             std::thread::yield_now();
         }
         node.maintain_miner();
-        assert_eq!(
-            node.generation, 42,
-            "queued result must keep its generation"
-        );
+        assert_eq!(node.generation, 42, "queued result must keep its generation");
         // If result delivery failed, restarting is necessary for progress.
         node.mining_result_pending.store(false, Ordering::Release);
         node.maintain_miner();
@@ -1469,8 +1154,7 @@ mod tests {
     #[test]
     fn stale_mining_result_cannot_extend_the_chain() {
         let mut node = node();
-        let vectors: serde_json::Value =
-            serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
+        let vectors: serde_json::Value = serde_json::from_str(include_str!("../tests/fixtures/prototype-v1.json")).unwrap();
         let block: Block = serde_json::from_value(vectors["one"]["block"].clone()).unwrap();
         node.mining = true;
         node.generation = 2;
@@ -1486,38 +1170,19 @@ mod tests {
         let mut node = node();
         let (sender, mut messages) = peer::outbox(false, 1);
         let (close, mut closed) = tokio::sync::oneshot::channel();
-        node.peers.insert(
-            1,
-            Connection {
-                sender,
-                address: "127.0.0.1:1".parse().unwrap(),
-                ready: false,
-                _close: close,
-                identity: None,
-            },
-        );
-        node.message(
-            1,
-            Message::Tip {
-                hash: crate::protocol::Bytes([9; 32]),
-                height: 10,
-            },
-        );
+        node.peers.insert(1, Connection { sender, address: "127.0.0.1:1".parse().unwrap(), ready: false, _close: close, identity: None });
+        node.message(1, Message::Tip { hash: crate::protocol::Bytes([9; 32]), height: 10 });
         assert!(node.sync.wanted.is_empty());
         assert!(messages.try_recv().is_err());
         // An otherwise valid hello using our own identity must close promptly.
         node.message(1, node.hello());
         assert!(node.peers.is_empty());
-        assert!(matches!(
-            closed.try_recv(),
-            Err(tokio::sync::oneshot::error::TryRecvError::Closed)
-        ));
+        assert!(matches!(closed.try_recv(), Err(tokio::sync::oneshot::error::TryRecvError::Closed)));
     }
 
     #[test]
     fn live_thread_changes_replace_the_pool_and_preserve_offline_and_stopped_modes() {
-        let directory =
-            std::env::temp_dir().join(format!("pixel-thread-change-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("pixel-thread-change-{}", std::process::id()));
         std::fs::create_dir_all(&directory).unwrap();
         let mut node = node();
         node.config.data_dir = directory.clone();
@@ -1529,19 +1194,13 @@ mod tests {
         let generation = node.generation;
         node.set_threads("3".parse().unwrap()).unwrap();
         assert_eq!(node.job.as_ref().unwrap().worker_count(), 3);
-        assert!(
-            node.generation > generation,
-            "queued results from the old pool must become stale"
-        );
+        assert!(node.generation > generation, "queued results from the old pool must become stale");
         assert!(node.network.is_none());
         node.mining = false;
         node.restart_miner();
         node.set_threads(MiningThreads::All).unwrap();
         assert!(node.job.is_none() && !node.mining);
-        assert_eq!(
-            Settings::load(&directory).unwrap().mining_threads,
-            MiningThreads::All
-        );
+        assert_eq!(Settings::load(&directory).unwrap().mining_threads, MiningThreads::All);
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

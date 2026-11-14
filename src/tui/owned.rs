@@ -1,17 +1,9 @@
 use super::*;
 
-pub(super) fn owned_selection(
-    owned: &BTreeMap<usize, Acquisition>,
-    previous: Option<usize>,
-) -> Option<usize> {
+pub(super) fn owned_selection(owned: &BTreeMap<usize, Acquisition>, previous: Option<usize>) -> Option<usize> {
     previous
         .filter(|id| owned.contains_key(id))
-        .or_else(|| {
-            owned
-                .range(previous.unwrap_or(0)..)
-                .next()
-                .map(|(id, _)| *id)
-        })
+        .or_else(|| owned.range(previous.unwrap_or(0)..).next().map(|(id, _)| *id))
         .or_else(|| owned.keys().next().copied())
 }
 pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selected: Option<usize>) {
@@ -31,20 +23,9 @@ pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selecte
             Line::from(vec![
                 Span::raw(format!("{id:4} ({:2},{:2}) ", id % WIDTH, id / WIDTH)),
                 Span::styled("  ", Style::default().bg(colors::rgb(color))),
-                Span::raw(format!(
-                    " #{color} {name}{}",
-                    if view.pending.contains_key(id) {
-                        " · pending"
-                    } else {
-                        ""
-                    }
-                )),
+                Span::raw(format!(" #{color} {name}{}", if view.pending.contains_key(id) { " · pending" } else { "" })),
             ]),
-            Line::from(format!(
-                "     {} • {}",
-                receipt.method(),
-                timestamp_utc(receipt.timestamp)
-            )),
+            Line::from(format!("     {} • {}", receipt.method(), timestamp_utc(receipt.timestamp))),
         ])
     });
     let selected_index = view.owned.keys().position(|id| Some(*id) == selected);
@@ -60,10 +41,7 @@ pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selecte
         let receipt = &view.owned[&id];
         let source = match receipt.source {
             Source::Mining => "Mining reward".into(),
-            Source::Transfer {
-                sender,
-                transaction,
-            } => format!("Transfer\nFrom: {sender}\nTransaction: {transaction}"),
+            Source::Transfer { sender, transaction } => format!("Transfer\nFrom: {sender}\nTransaction: {transaction}"),
         };
         let color_status = view.pending.get(&id).map_or_else(
             || "Confirmed color".into(),
@@ -71,11 +49,7 @@ pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selecte
                 format!(
                     "PENDING #{}\nWaiting for block confirmation.\n{}",
                     paint.color,
-                    if view.status["mining"] == true {
-                        "Mining is active."
-                    } else {
-                        "Mining stopped: m starts it."
-                    }
+                    if view.status["mining"] == true { "Mining is active." } else { "Mining stopped: m starts it." }
                 )
             },
         );
@@ -88,12 +62,7 @@ pub(super) fn owned_menu(frame: &mut Frame, area: Rect, view: &View<'_>, selecte
             receipt.height,
             receipt.block
         );
-        frame.render_widget(
-            Paragraph::new(text)
-                .block(panel("Acquisition details"))
-                .wrap(Wrap { trim: false }),
-            regions[1],
-        );
+        frame.render_widget(Paragraph::new(text).block(panel("Acquisition details")).wrap(Wrap { trim: false }), regions[1]);
     }
 }
 
@@ -102,12 +71,7 @@ mod tests {
     use super::*;
     use crate::protocol::Bytes;
     fn receipt() -> Acquisition {
-        Acquisition {
-            height: 1,
-            timestamp: 1,
-            block: Bytes::default(),
-            source: Source::Mining,
-        }
+        Acquisition { height: 1, timestamp: 1, block: Bytes::default(), source: Source::Mining }
     }
     #[test]
     fn selection_tracks_parcel_ids_across_transfers_and_reorgs() {

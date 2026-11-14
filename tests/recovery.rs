@@ -11,10 +11,7 @@ fn persistent_identity_and_private_permissions() {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(
-            std::fs::metadata(&seed).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        assert_eq!(std::fs::metadata(&seed).unwrap().permissions().mode() & 0o777, 0o600);
         std::fs::set_permissions(&seed, std::fs::Permissions::from_mode(0o644)).unwrap();
         assert!(crypto::load_key(&seed).is_err());
     }
@@ -30,19 +27,11 @@ fn seed_file_accepts_only_exact_hex_and_an_optional_newline() {
     let hex = std::fs::read_to_string(&path).unwrap();
     for valid in [hex.clone(), format!("{hex}\n")] {
         std::fs::write(&path, valid).unwrap();
-        assert_eq!(
-            crypto::public_key(&crypto::load_key(&path).unwrap()),
-            crypto::public_key(&key)
-        );
+        assert_eq!(crypto::public_key(&crypto::load_key(&path).unwrap()), crypto::public_key(&key));
     }
-    for invalid in [
-        format!("{hex} "),
-        format!(" {hex}"),
-        format!("{hex}\t"),
-        format!("{hex}\r"),
-        format!("{hex}\r\n"),
-        format!("{hex}\n\n"),
-    ] {
+    for invalid in
+        [format!("{hex} "), format!(" {hex}"), format!("{hex}\t"), format!("{hex}\r"), format!("{hex}\r\n"), format!("{hex}\n\n")]
+    {
         std::fs::write(&path, invalid).unwrap();
         assert!(crypto::load_key(&path).is_err());
         assert!(crypto::load_or_create_key(&path).is_err());

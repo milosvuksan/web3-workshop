@@ -1,0 +1,25 @@
+# Pixel Chain - podesavanja cvora
+# Linije koje pocinju sa # se ignorisu. Opcije iz komandne linije imaju prednost.
+
+# Port na kome tvoj cvor slusa (interfejs u browseru je na port + 1000)
+port=7001
+
+# IP adrese i portovi drugih cvorova, razdvojeni zarezom.
+# Adresa kolege: kolega pokrene ipconfig i procita IPv4 Address.
+# Primer: peers=192.168.1.20:7001
+peers=10.69.133.179:7001
+
+# Rudarenje: 1 = ukljuceno, 0 = iskljuceno
+mine=1
+
+# Folder za kljuceve i sliku platna
+data=data
+
+# Simulacija laga (ostavi 1)
+lag=1
+
+# Automatsko pronalazenje cvorova na mrezi (UDP broadcast)
+discover=1
+
+# Automatske probne transakcije
+demo=1

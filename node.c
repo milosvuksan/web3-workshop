@@ -18,6 +18,8 @@
  *
  * Interfejs u browseru: http://localhost:<port + 1000>, npr. http://localhost:8001
  *
+ * Podesavanja se citaju iz config.txt (pravi se sam pri prvom pokretanju).
+ *
  * Opcije:
  *   --port N            port za slusanje (isto sto i --listen 0.0.0.0:N)
  *   --listen ADR:PORT   adresa za slusanje (podrazumevano 0.0.0.0:7001)
@@ -27,6 +29,8 @@
  *   --no-lag            iskljuci simulaciju laga (podrazumevano ukljucena)
  *   --lag-seed N        seme za lag (podrazumevano 1)
  *   --no-demo           ne pravi automatske transakcije
+ *   --config FAJL       drugi config fajl (podrazumevano config.txt)
+ *   --no-config         ne citaj config.txt
  *   --no-discover       iskljuci automatsko pronalazenje cvorova (UDP broadcast)
  *   --discover-port N   UDP port za pronalazenje (podrazumevano 7000)
  *   --vectors           ispisi test podatke i izadji
@@ -1294,6 +1298,7 @@ static void accept_new(void)
 
 static int g_tcp_port = 7001;
 static int g_http_port = 0;
+static char g_my_ip[32] = "";
 
 static int discover_open(void)
 {
@@ -1654,6 +1659,7 @@ static void draw_screen(void)
 
     printf("\x1b[H\x1b[2J");
     printf("Pixel Chain cvor   slusam %s   identitet %.16s...\n", g_listen_addr, idh);
+    printf("Cvorovi iz configa/pronadjeni: %d   ", g_npeers);
     printf("Veze: %d spremnih / %d ukupno   lag %s   rudarenje %s",
            ready, sessions, g_lag ? "UKLJUCEN" : "iskljucen", g_mining ? "UKLJUCENO" : "iskljuceno");
     if (g_mining) printf("   %.0f heseva/s", g_hashrate);
@@ -1661,6 +1667,7 @@ static void draw_screen(void)
     if (g_mining && g_mined > 0)
         printf("Moji blokovi: %ld   poslednji %.1f s   prosek %.1f s   ocekivano ~%.1f s (samo ja)\n",
                g_mined, g_last_secs, g_total_secs / g_mined, g_hashrate > 0 ? (double)(1ULL << DIFFICULTY) / g_hashrate : 0);
+    if (g_my_ip[0]) printf("MOJA ADRESA: %s:%d  (ovo kolega upisuje u svoj config.txt kao peers=...)\n", g_my_ip, g_tcp_port);
     if (g_http_port) printf("INTERFEJS: otvori http://localhost:%d u browseru\n", g_http_port);
     printf("VRH:   visina %llu   hes %.20s...\n", (unsigned long long)tip->height, th);
     printf("STANJE (uporedi sa drugim cvorom): %.20s...\n", sh);
@@ -2245,6 +2252,110 @@ static void http_io(fd_set *rd, fd_set *wr)
     }
 }
 
+/* ======================= config.txt ======================= */
+
+static int add_peers(const char *listin)
+{
+    char list[1024];
+    snprintf(list, sizeof list, "%s", listin);
+    for (char *tok = strtok(list, ", \t"); tok; tok = strtok(NULL, ", \t")) {
+        Peer p; memset(&p, 0, sizeof p); p.session = -1;
+        char full[96];
+        if (!strchr(tok, ':')) snprintf(full, sizeof full, "127.0.0.1:%s", tok);   /* samo port = isti racunar */
+        else snprintf(full, sizeof full, "%s", tok);
+        if (parse_addr(full, &p.addr, p.host, &p.port)) { fprintf(stderr, "losa adresa: %s\n", full); return -1; }
+        int dup = 0;
+        for (int k = 0; k < g_npeers; k++) if (!memcmp(&g_peers[k].addr, &p.addr, sizeof p.addr)) dup = 1;
+        if (!dup && g_npeers < MAX_PEERS) g_peers[g_npeers++] = p;
+    }
+    return 0;
+}
+
+static const char CONFIG_TEMPLATE[] =
+    "# Pixel Chain - podesavanja cvora\n"
+    "# Linije koje pocinju sa # se ignorisu. Opcije iz komandne linije imaju prednost.\n"
+    "\n"
+    "# Port na kome tvoj cvor slusa (interfejs u browseru je na port + 1000)\n"
+    "port=7001\n"
+    "\n"
+    "# IP adrese i portovi drugih cvorova, razdvojeni zarezom.\n"
+    "# Adresa kolege: kolega pokrene ipconfig i procita IPv4 Address.\n"
+    "# Primer: peers=192.168.1.20:7001\n"
+    "peers=\n"
+    "\n"
+    "# Rudarenje: 1 = ukljuceno, 0 = iskljuceno\n"
+    "mine=1\n"
+    "\n"
+    "# Folder za kljuceve i sliku platna\n"
+    "data=data\n"
+    "\n"
+    "# Simulacija laga (ostavi 1)\n"
+    "lag=1\n"
+    "\n"
+    "# Automatsko pronalazenje cvorova na mrezi (UDP broadcast)\n"
+    "discover=1\n"
+    "\n"
+    "# Automatske probne transakcije\n"
+    "demo=1\n";
+
+/* Ucita config. Ako fajl ne postoji i create = 1, napravi ga iz sablona. */
+static int load_config(const char *path, int create)
+{
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        if (!create) { fprintf(stderr, "ne mogu da otvorim %s\n", path); return -1; }
+        f = fopen(path, "w");
+        if (f) { fputs(CONFIG_TEMPLATE, f); fclose(f); }
+        printf("Napravljen %s - upisi u njega IP adresu kolege (peers=...).\n", path);
+        f = fopen(path, "r");
+        if (!f) return 0;
+    }
+    char line[1100];
+    while (fgets(line, sizeof line, f)) {
+        line[strcspn(line, "\r\n")] = 0;
+        char *p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '#' || *p == 0) continue;
+        char *eq = strchr(p, '=');
+        if (!eq) continue;
+        *eq = 0;
+        char *key = p, *val = eq + 1;
+        for (char *e = key + strlen(key); e > key && (e[-1] == ' ' || e[-1] == '\t'); ) *--e = 0;
+        while (*val == ' ' || *val == '\t') val++;
+        for (char *e = val + strlen(val); e > val && (e[-1] == ' ' || e[-1] == '\t'); ) *--e = 0;
+        if (!strcmp(key, "port") && *val) snprintf(g_listen_addr, sizeof g_listen_addr, "0.0.0.0:%s", val);
+        else if (!strcmp(key, "listen") && *val) snprintf(g_listen_addr, sizeof g_listen_addr, "%s", val);
+        else if (!strcmp(key, "peers")) { if (*val && add_peers(val)) { fclose(f); return -1; } }
+        else if (!strcmp(key, "mine")) g_mining = atoi(val) != 0;
+        else if (!strcmp(key, "data") && *val) snprintf(g_data_dir, sizeof g_data_dir, "%s", val);
+        else if (!strcmp(key, "lag")) g_lag = atoi(val) != 0;
+        else if (!strcmp(key, "lag_seed")) g_lag_seed = strtoull(val, NULL, 10);
+        else if (!strcmp(key, "discover")) g_discover = atoi(val) != 0;
+        else if (!strcmp(key, "demo")) g_demo = atoi(val) != 0;
+        else printf("config: nepoznato podesavanje '%s' (preskacem)\n", key);
+    }
+    fclose(f);
+    return 0;
+}
+
+/* Moja IP adresa u lokalnoj mrezi (UDP "connect" ne salje nista, samo izabere interfejs) */
+static void find_my_ip(void)
+{
+    sock_t s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s == BAD_SOCK) return;
+    struct sockaddr_in a;
+    memset(&a, 0, sizeof a);
+    a.sin_family = AF_INET;
+    a.sin_port = htons(80);
+    inet_pton(AF_INET, "8.8.8.8", &a.sin_addr);
+    if (connect(s, (struct sockaddr *)&a, sizeof a) == 0) {
+        struct sockaddr_in me;
+        socklen_t l = sizeof me;
+        if (getsockname(s, (struct sockaddr *)&me, &l) == 0) inet_ntop(AF_INET, &me.sin_addr, g_my_ip, sizeof g_my_ip);
+    }
+    sock_close(s);
+}
+
 /* ======================= main ======================= */
 
 int main(int argc, char **argv)
@@ -2264,24 +2375,22 @@ int main(int argc, char **argv)
     int vectors = 0, no_screen = 0;
     long run_secs = -1, mine_secs = -1;
     for (int i = 0; i < MAX_PEERS; i++) g_peers[i].session = -1;
+
+    /* prvo config.txt (ili --config FAJL), pa opcije iz komandne linije preko njega */
+    const char *cfg_path = "config.txt";
+    int cfg_given = 0, use_cfg = 1;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--config") && i + 1 < argc) { cfg_path = argv[i + 1]; cfg_given = 1; }
+        if (!strcmp(argv[i], "--no-config") || !strcmp(argv[i], "--vectors") || !strcmp(argv[i], "--no-screen")) use_cfg = cfg_given;
+    }
+    if (use_cfg && load_config(cfg_path, !cfg_given) != 0) return 1;
+
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--listen") && i + 1 < argc) snprintf(g_listen_addr, sizeof g_listen_addr, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--port") && i + 1 < argc) snprintf(g_listen_addr, sizeof g_listen_addr, "0.0.0.0:%s", argv[++i]);
-        else if (!strcmp(argv[i], "--peers") && i + 1 < argc) {
-            char list[1024];
-            snprintf(list, sizeof list, "%s", argv[++i]);
-            for (char *tok = strtok(list, ","); tok; tok = strtok(NULL, ",")) {
-                Peer p; memset(&p, 0, sizeof p); p.session = -1;
-                char full[96];
-                if (!strchr(tok, ':')) snprintf(full, sizeof full, "127.0.0.1:%s", tok);   /* samo port = isti racunar */
-                else snprintf(full, sizeof full, "%s", tok);
-                tok = full;
-                if (parse_addr(tok, &p.addr, p.host, &p.port)) { fprintf(stderr, "losa adresa: %s\n", tok); return 1; }
-                int dup = 0;
-                for (int k = 0; k < g_npeers; k++) if (!memcmp(&g_peers[k].addr, &p.addr, sizeof p.addr)) dup = 1;
-                if (!dup && g_npeers < MAX_PEERS) g_peers[g_npeers++] = p;
-            }
-        }
+        else if (!strcmp(argv[i], "--peers") && i + 1 < argc) { if (add_peers(argv[++i])) return 1; }
+        else if (!strcmp(argv[i], "--config") && i + 1 < argc) i++;
+        else if (!strcmp(argv[i], "--no-config")) {}
         else if (!strcmp(argv[i], "--data") && i + 1 < argc) snprintf(g_data_dir, sizeof g_data_dir, "%s", argv[++i]);
         else if (!strcmp(argv[i], "--mine")) g_mining = 1;
         else if (!strcmp(argv[i], "--no-lag")) g_lag = 0;
@@ -2301,6 +2410,7 @@ int main(int argc, char **argv)
     if (vectors) { print_vectors(); return 0; }
 
     MKDIR(g_data_dir);
+    find_my_ip();
     key_load_or_create(&g_id, "identity.seed");
     key_load_or_create(&g_key_b, "identity_b.seed");
     chain_init();
